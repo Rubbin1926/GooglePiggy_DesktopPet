@@ -60,6 +60,15 @@ def run(executable, report, platform):
         qa = subprocess.run([str(executable), '--qa-only'], env=env, capture_output=True, text=True, timeout=15, check=True)
         info = json.loads(qa.stdout)
         checks['bundled_python_and_assets'] = info['frames'] == 2167
+        checks['isolated_python311'] = bool(info.get('frozen')) and info.get('python', '').startswith('3.11.')
+        hook_env = dict(env)
+        hook_env.pop('DISPLAY', None)
+        hook_env.pop('WAYLAND_DISPLAY', None)
+        hook_state = root/'headless-hook'
+        hook = subprocess.run([str(executable), '--hook', '--state-dir', str(hook_state)],
+                              input=json.dumps({'hook_event_name': 'SessionStart', 'session_id': 'headless'}),
+                              env=hook_env, capture_output=True, text=True, timeout=10, check=True)
+        checks['hook_without_display'] = json.loads(hook.stdout) == {} and len(list((hook_state/'family-events').glob('*.json'))) == 1
         state = root/'state'
         screenshot = report.parent/'linux-packaged-x11.png'
         with (root/'runtime.log').open('w') as log:

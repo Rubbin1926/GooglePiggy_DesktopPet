@@ -52,6 +52,13 @@ def package(root, number='0.5.9', contents=b'new app'):
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_empty_xdg_variables_keep_standard_user_directories(self):
+        from linux.paths import state_dir, config_dir, data_dir
+        with patch.dict(os.environ, {'XDG_STATE_HOME': '', 'XDG_CONFIG_HOME': '', 'XDG_DATA_HOME': '', 'GOOGLEPIGGY_STATE_DIR': ''}):
+            self.assertEqual(state_dir(), Path.home()/'.local/state/googlepiggy')
+            self.assertEqual(config_dir(), Path.home()/'.config')
+            self.assertEqual(data_dir(), Path.home()/'.local/share')
+
     def test_registration_preserves_other_handlers_and_unknown_events(self):
         existing = {'description': 'user config', 'hooks': {'Stop': [{'matcher': '*', 'hooks': [
                     {'type': 'command', 'command': 'other-tool'},
@@ -163,6 +170,24 @@ class HookTests(unittest.TestCase):
                              'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, .01)
             self.assertEqual(result, {})
             self.assertFalse(list((root/'permission-requests').glob('*.request.json')))
+
+    def test_old_permission_response_cannot_approve_or_overwrite_new_turn(self):
+        from codex_bridge import actor_path
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
+            result = []
+            thread = threading.Thread(target=lambda: result.append(handle({'hook_event_name': 'PermissionRequest',
+                'session_id': 'A', 'turn_id': 'old-turn', 'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, 2)))
+            thread.start()
+            request = wait_for(lambda: list((root/'permission-requests').glob('*.request.json')))[0]
+            value = json.loads(request.read_text())
+            wait_for(lambda: (json.loads(actor_path(root, 'A').read_text()) if actor_path(root, 'A').is_file() else {}).get('event') == 'PermissionRequest')
+            handle({'hook_event_name': 'UserPromptSubmit', 'session_id': 'A', 'turn_id': 'new-turn'}, root)
+            atomic_json(request.with_name(value['request_id']+'.response.json'), {'request_id': value['request_id'], 'decision': 'allow'})
+            thread.join(3)
+            self.assertEqual(result, [{}])
+            self.assertEqual(json.loads(actor_path(root, 'A').read_text())['turn_id'], 'new-turn')
 
     def test_permission_summary_redacts_secrets(self):
         summary = permission_summary({'tool_name': 'Bash', 'tool_input': {'command': 'token=secret123 password=xyz'}})
@@ -458,6 +483,34 @@ class QtTests(unittest.TestCase):
         with patch('linux.desktop.QDesktopServices.openUrl', return_value=False), patch('linux.desktop.QMessageBox.information'):
             self.window.open_thread('A')
         self.assertTrue(self.window.store.nodes['A'].unread)
+
+    def test_pending_permission_is_stable_and_child_click_changes_focus(self):
+        from datetime import datetime, timezone
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        self.dispatch('UserPromptSubmit')
+        self.dispatch('SubagentStart', agent='child')
+        def request(request_id, agent):
+            atomic_json(self.root/'permission-requests'/(request_id+'.request.json'),
+                        {'request_id': request_id, 'session_id': 'A', 'agent_id': agent, 'turn_id': 't',
+                         'expires_at': datetime.fromtimestamp(time.time()+500, timezone.utc).isoformat(),
+                         'created_at': utc_now(), 'hook_pid': os.getpid(), 'summary': '演示权限详情'})
+        w = self.window
+        request('b'*32, 'child')
+        w.poll()
+        self.assertEqual(w.permission['request_id'], 'b'*32)
+        request('a'*32, '')
+        w.poll()
+        self.assertEqual(w.permission['request_id'], 'b'*32)
+        w.permission = None
+        w.poll()
+        self.assertEqual(w.permission['request_id'], 'a'*32)
+        w.dirty = True
+        w.tick()
+        rect = w.renderer.child_rects['child']
+        point = QPoint(round((rect[0]+rect[2])/2+w.renderer.offset[0]), round((rect[1]+rect[3])/2+w.renderer.offset[1]))
+        QTest.mouseClick(w, Qt.MouseButton.LeftButton, pos=point)
+        self.assertEqual(w.permission['request_id'], 'b'*32)
 
     def test_packaged_chat_opener_does_not_export_bundled_runtime(self):
         from linux.desktop import PetWindow

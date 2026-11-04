@@ -340,7 +340,12 @@ class PetWindow(QWidget):
             if not response.exists():
                 pending.setdefault(actor, []).append(value)
         self.permission_actors = set(pending)
-        candidates = [self.focused_child, self.store.selected]+[node.id for node in self.store.children(self.store.selected, self.wall)]
+        node = self.store.nodes.get(self.focused_child) or self.store.nodes.get(self.store.selected)
+        candidates = ([node.id] if node else [])+[child.id for child in self.store.children(self.store.selected, self.wall)]
+        if self.permission:
+            actor = self.permission.get('agent_id') or self.permission.get('session_id')
+            if actor in candidates:
+                candidates = [actor]+[candidate for candidate in candidates if candidate != actor]
         request = next((min(pending[actor], key=lambda p: p.get('created_at', '')) for actor in candidates if actor in pending), None)
         old = self.permission.get('request_id') if self.permission else None
         if old != (request.get('request_id') if request else None):

@@ -18,19 +18,19 @@ def state_dir():
     override = os.environ.get('GOOGLEPIGGY_STATE_DIR')
     if override:
         return Path(override).expanduser()
-    return Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'googlepiggy'
+    return Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'googlepiggy'
 
 
 def config_dir():
-    return Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config')))
+    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
 
 
 def data_dir():
-    return Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
+    return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
 
 
 def codex_home():
-    return Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex')))
+    return Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
 
 
 def font_file(bold=False):

@@ -77,20 +77,25 @@ def request_permission(payload, directory, timeout=590):
     actor = payload.get('agent_id') or payload.get('session_id')
     try:
         while time.time()-now < timeout:
+            state = read_json(actor_path(directory, actor)) if actor else {}
+            if not isinstance(state, dict):
+                return {}
+            if (state.get('event') in {'Interrupt', 'SessionEnd', 'Stop', 'SubagentStop'} or
+                state.get('turn_id') and payload.get('turn_id') and state['turn_id'] != payload['turn_id']):
+                # The newer turn/terminal event is authoritative. Never replace
+                # it with an old permission's idle status or permission decision.
+                return {}
+            if not heartbeat_fresh(directory):
+                break
             reply = read_json(response)
             if reply is not None:
-                if reply.get('request_id') != request_id or reply.get('decision') not in {'allow', 'deny'}:
+                if not isinstance(reply, dict) or reply.get('request_id') != request_id or reply.get('decision') not in {'allow', 'deny'}:
                     break
                 decision = {'behavior': reply['decision']}
                 if decision['behavior'] == 'deny':
                     decision['message'] = '用户从 GooglePiggy 拒绝本次请求。'
                 publish_event(directory, event_payload(payload, 'PermissionDecision', 'working' if decision['behavior'] == 'allow' else 'idle'))
                 return {'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': decision}}
-            state = read_json(actor_path(directory, actor)) if actor else {}
-            if (not heartbeat_fresh(directory) or state and
-                (state.get('event') in {'Interrupt', 'SessionEnd', 'Stop', 'SubagentStop'} or
-                 state.get('turn_id') and payload.get('turn_id') and state['turn_id'] != payload['turn_id'])):
-                break
             time.sleep(.15)
         publish_event(directory, event_payload(payload, 'PermissionNoDecision', 'idle'))
         return {}
