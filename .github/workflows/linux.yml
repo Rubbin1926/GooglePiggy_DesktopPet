@@ -29,19 +29,20 @@ jobs:
       - name: Install Linux runtime dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libxcb-cursor0 fonts-noto-cjk xvfb
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libfontconfig1 libdbus-1-3 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-sync1 libxcb-xfixes0 libxcb-shape0 libxcb-glx0 desktop-file-utils fonts-noto-cjk xvfb
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements-linux-build.txt
       - name: Test and build portable package
         run: ./build-linux.sh
-      - name: Start packaged app on X11
-        run: xvfb-run -a dist/GooglePiggy/googlepiggy --state-dir /tmp/googlepiggy-ci --no-observe --no-update-check --quit-after 3 --capture qa/linux-x11.png
+      - name: Test packaged lifecycle and rollback on X11
+        run: xvfb-run -a .venv/bin/python tools/test_linux_runtime.py --exe dist/GooglePiggy/googlepiggy
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: GooglePiggy-linux-x86_64
           path: |
             dist/GooglePiggy-*-linux-x86_64.tar.gz
             dist/SHA256SUMS.txt
-            qa/linux-x11.png
+            qa/linux-*.png
+            qa/linux-runtime.json
           compression-level: 0
           retention-days: 7
