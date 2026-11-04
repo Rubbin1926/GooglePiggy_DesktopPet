@@ -2,7 +2,7 @@
 
 一只会陪你和 Codex 一起工作的 Windows / macOS / Linux 透明桌面小猪。
 
-本 Fork 新增 **Ubuntu 22.04 / GNOME X11 移植测试版**，优先复刻原作功能。Linux 安装、独立 Python 3.11 与验收范围见 [README-LINUX.md](README-LINUX.md) 和 [LINUX-PORTING.md](LINUX-PORTING.md)。原项目：[Myf-ricey/GooglePiggy_DesktopPet](https://github.com/Myf-ricey/GooglePiggy_DesktopPet)。
+本 Fork 新增 **Ubuntu 22.04 / GNOME X11 移植测试版**，优先复刻原作功能。Linux 安装、Python 3.10 基线与验收范围见 [README-LINUX.md](README-LINUX.md) 和 [LINUX-PORTING.md](LINUX-PORTING.md)。原项目：[Myf-ricey/GooglePiggy_DesktopPet](https://github.com/Myf-ricey/GooglePiggy_DesktopPet)。
 
 | 平台 | 最新版本 | 下载与说明 |
 | --- | --- | --- |

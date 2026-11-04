@@ -6,6 +6,7 @@ import shutil
 import sys
 import tarfile
 import subprocess
+import sysconfig
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from linux import VERSION
@@ -26,7 +27,7 @@ def main():
                 raise ValueError('Unexpected external/directory symlink: '+str(path))
             path.unlink()
             shutil.copy2(target, path)
-    for name in ('start-linux.sh', 'install-linux.sh', 'uninstall-linux.sh', 'README-LINUX.md',
+    for name in ('start-linux.sh', 'install-linux.sh', 'uninstall-linux.sh', 'install-deps-linux.sh', 'requirements-linux-apt.txt', 'README-LINUX.md',
                  'THIRD-PARTY-LINUX.md', 'LICENSE', 'ASSET-NOTICE.md'):
         shutil.copy2(root/name, folder/name)
     for script in folder.glob('*.sh'):
@@ -59,12 +60,16 @@ def main():
             target.mkdir(parents=True, exist_ok=True)
             shutil.copy2(copyright, target/'copyright')
     shutil.copytree('/usr/share/common-licenses', folder/'licenses/Ubuntu/common-licenses', dirs_exist_ok=True)
-    # Preserve the actual runtime license from the dedicated Python installation.
-    python_license = Path(sys.base_prefix)/'lib/python3.11/LICENSE.txt'
+    # Preserve the license supplied with the build interpreter.
+    python_license = Path(sysconfig.get_path('stdlib'))/'LICENSE.txt'
     if python_license.is_file():
         target = folder/'licenses/CPython'
         target.mkdir(parents=True, exist_ok=True)
         shutil.copy2(python_license, target/'LICENSE.txt')
+    elif Path('/usr/share/doc/python3.10/copyright').is_file():
+        target = folder/'licenses/CPython'
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy2('/usr/share/doc/python3.10/copyright', target/'copyright')
     files = {str(path.relative_to(folder)): digest(path) for path in sorted(folder.rglob('*'))
              if path.is_file() and path != folder/MANIFEST}
     (folder/MANIFEST).write_text(json.dumps({'schema': 1, 'platform': 'linux-x86_64', 'version': VERSION,

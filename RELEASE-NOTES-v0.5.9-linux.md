@@ -1,19 +1,38 @@
-# Ubuntu 22.04 / X11 · 0.5.9 移植测试版
+# Ubuntu 22.04 LTS / Python 3.10 · Linux 测试版
 
-- 复用原作 21 组、2167 帧 RGBA 动画，提供透明置顶窗口、拖拽、躺平、休闲和四边尾巴隐藏。
-- 提供多聊天家庭、三只子代理与 `+N`、独立动画进度、未读、任务跳转及完成庆祝。
-- 提供权限气泡、长内容滚动、允许一次 / 拒绝、外观与实际位置预览、自启动、安装卸载以及独立 Linux 更新与回滚。
+面向原生 **Ubuntu 22.04 LTS Desktop（x86_64）**，使用 **Ubuntu on Xorg** 会话。
+源码以系统自带的 Python 3.10 为基线；本页便携包也从原生 Ubuntu 22.04 容器构建，包含 Python 3.10、Qt 和中文字体。
 
-基于 Myf-ricey/GooglePiggy_DesktopPet 的 `1f69e17`，保留原版权、MIT License、素材说明和上游代码历史。
-Linux 源码位于 `linux/`；原 Windows / macOS 运行时代码和动画素材保留。
+## 安装便携包
 
-独立 Python 3.11.18，固定兼容的 PySide6 / Shiboken 6.8.3。便携包包含运行时、中文字体及依赖许可，不需要改变系统 Python 或 Isaac Sim 环境。
+下载附件中的压缩包与 SHA256SUMS.txt，可先运行 `sha256sum -c SHA256SUMS.txt` 校验，再完整解压：
 
-已验证：48 项回归、14 项打包运行检查、Ubuntu 22.04 干净 CI、真实进程更新 / 回滚重启、持续绘制、用户审核后的真实 Codex 工具状态联动。
-界面预览使用模拟任务；完整证据边界见 [LINUX-PORTING.md](LINUX-PORTING.md)。
+```sh
+mkdir -p GooglePiggy
+tar -xzf GooglePiggy-0.5.9-linux-x86_64.tar.gz -C GooglePiggy
+cd GooglePiggy
+./install-deps-linux.sh
+./start-linux.sh
+```
 
-尚未实测：真实扩展屏、混合物理 DPI、多种 Dock 布局与跨日使用。Wayland 原生定位暂未支持。
-这是首个移植测试版，优先对齐原作功能，后续改进根据使用反馈进行。
+最基础的 Ubuntu 安装可能缺少 Qt 所需的 EGL / GL / XCB 库、`xdg-utils` 或中文字体。
+包内的 `install-deps-linux.sh` 会检查 `requirements-linux-apt.txt`，通过 Ubuntu APT 安装缺包；普通用户需输入 sudo 密码。
+便携包不需要安装 pip 或其他 Python 版本。
 
-完整解压后运行 `./start-linux.sh`；需要菜单、自启动和联动时运行 `./install-linux.sh`，再在 Codex 中审核 GooglePiggy Linux Hook。
-程序目录需要保留。SHA-256 见附件 `SHA256SUMS.txt`。卸载运行 `./uninstall-linux.sh`，用户状态与备份保留。
+如提示 Wayland 定位不支持，请注销，在登录界面的齿轮菜单选择 **Ubuntu on Xorg** 后登录。
+
+## 菜单、自启动与 Codex
+
+- 仅使用桌宠：运行 `./install-linux.sh --no-hooks` 登记应用菜单和自启动。
+- 使用 Codex 联动：先安装 Codex，再运行 `./install-linux.sh`，在 Codex 设置 → Hooks 或 CLI `/hooks` 中审核 GooglePiggy Linux。
+- `--no-autostart` 可跳过自启动登记；程序目录需要保留。
+- 卸载运行 `./uninstall-linux.sh`，用户状态和备份保留。
+
+## 从源码安装
+
+运行 `./setup-linux.sh`：脚本补齐标准桌面依赖及 `python3-venv`，使用 `/usr/bin/python3` 创建 Python 3.10 虚拟环境并安装锁定的包。
+构建便携包另需 `python3-dev binutils`，或使用仓库的 `Dockerfile.linux`。
+
+保留原作动画、多任务、子代理、拖拽贴边、权限气泡、外观与更新回滚。
+代码与素材归属保留原仓库声明，依赖许可随包附带。
+完整说明见 [README-LINUX.md](README-LINUX.md)。

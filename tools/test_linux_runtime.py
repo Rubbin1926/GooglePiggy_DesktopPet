@@ -56,11 +56,11 @@ def run(executable, report, platform):
         root = Path(tmp)
         env = dict(os.environ, QT_QPA_PLATFORM=platform, CODEX_HOME=str(root/'empty-codex'),
                    PYTHONHOME='/nonexistent-piggy-test-home', PYTHONPATH='/nonexistent-piggy-test-path', PATH='/usr/bin:/bin')
-        # This deliberately excludes the development venv and system Python 3.11.
+        # This deliberately excludes the development venv.
         qa = subprocess.run([str(executable), '--qa-only'], env=env, capture_output=True, text=True, timeout=15, check=True)
         info = json.loads(qa.stdout)
         checks['bundled_python_and_assets'] = info['frames'] == 2167
-        checks['isolated_python311'] = bool(info.get('frozen')) and info.get('python', '').startswith('3.11.')
+        checks['bundled_python310'] = bool(info.get('frozen')) and info.get('python', '').startswith('3.10.')
         hook_env = dict(env)
         hook_env.pop('DISPLAY', None)
         hook_env.pop('WAYLAND_DISPLAY', None)

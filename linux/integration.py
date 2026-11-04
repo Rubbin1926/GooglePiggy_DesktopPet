@@ -127,7 +127,6 @@ def install(enable_autostart=True, hooks=True):
     print('已创建应用入口'+('与自启动。' if enable_autostart else '。'))
     if hooks:
         print('已登记十二项 Hook。请在 Codex 设置 → Hooks，或 CLI /hooks 中检查并信任 GooglePiggy Linux。')
-    print('系统默认 Python、Shell 配置和 Isaac Sim 环境未修改。')
 
 
 def uninstall():

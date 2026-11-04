@@ -1,0 +1,19 @@
+FROM ubuntu:22.04 AS build
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
+COPY install-deps-linux.sh requirements-linux-apt.txt ./
+RUN ./install-deps-linux.sh --source \
+    && apt-get install -y --no-install-recommends python3-dev binutils \
+    && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN ./setup-linux.sh \
+    && .venv/bin/python -m pip install --disable-pip-version-check -r requirements-linux-build.txt
+RUN QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
+    tools.test_linux_port.UpdateTests.test_package_validation_detects_tampering_and_extra_files \
+    tools.test_linux_port.HookTests.test_real_hook_process_does_not_import_qt \
+    tools.test_linux_port.QtTests.test_qt_void_bindings_do_not_consume_none_references -q \
+    && ./build-linux.sh
+RUN QT_QPA_PLATFORM=offscreen dist/GooglePiggy/googlepiggy \
+    --state-dir /tmp/googlepiggy-build-smoke --no-observe --no-update-check --quit-after 2
+FROM scratch AS export
+COPY --from=build /app/dist/ /

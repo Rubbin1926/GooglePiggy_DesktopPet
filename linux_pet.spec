@@ -1,4 +1,4 @@
-# Build on Ubuntu 22.04; the result contains its own Python 3.11 and Qt runtime.
+# Build on Ubuntu 22.04 with its default Python 3.10 and Qt runtime.
 from pathlib import Path
 from PyInstaller.utils.hooks import copy_metadata
 import sys
@@ -12,12 +12,11 @@ for name in ('LICENSE', 'ASSET-NOTICE.md', 'README-LINUX.md', 'THIRD-PARTY-LINUX
 for package in ('numpy', 'Pillow', 'zstandard', 'PySide6-Essentials', 'shiboken6'):
     datas += copy_metadata(package)
 native = []
-for path in (root/'.native/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0',
-             Path('/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0')):
+for path in (Path('/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0'),):
     if path.is_file():
         native.append((str(path), '.'))
         break
-for copyright in (root/'.native/usr/share/doc/libxcb-cursor0/copyright', Path('/usr/share/doc/libxcb-cursor0/copyright')):
+for copyright in (Path('/usr/share/doc/libxcb-cursor0/copyright'),):
     if copyright.is_file():
         datas.append((str(copyright), 'licenses/xcb-cursor'))
         break
@@ -26,7 +25,7 @@ for bold in (False, True):
     if path is None:
         raise ValueError('构建发行包前需要 Noto Sans CJK 字体；请运行 setup-linux.sh。')
     datas.append((str(path), 'fonts'))
-for path in (root/'.native/usr/share/doc/fonts-noto-cjk/copyright', Path('/usr/share/doc/fonts-noto-cjk/copyright')):
+for path in (Path('/usr/share/doc/fonts-noto-cjk/copyright'),):
     if path.is_file():
         datas.append((str(path), 'licenses/Noto-CJK'))
         break

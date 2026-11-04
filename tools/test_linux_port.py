@@ -372,7 +372,7 @@ class QtTests(unittest.TestCase):
         self.assertNotEqual(w.anchor, before)
 
     def test_qt_void_bindings_do_not_consume_none_references(self):
-        # Python 3.11 cannot tolerate a binding returning a borrowed Py_None.
+        # Non-immortal CPython singletons require an owned return reference.
         # Short visual smoke tests miss the eventual none_dealloc process abort.
         import gc
         from PySide6.QtGui import QImage, QPainter

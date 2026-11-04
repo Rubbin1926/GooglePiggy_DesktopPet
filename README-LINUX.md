@@ -1,49 +1,54 @@
 # GooglePiggy · Ubuntu / Linux
 
-这是 [Myf-ricey/GooglePiggy_DesktopPet](https://github.com/Myf-ricey/GooglePiggy_DesktopPet) 的 Ubuntu 移植分支。
-目标是先复刻原作的动画、任务家庭、子代理和交互，再考虑新功能。
-上游基线：`1f69e17ff28666e735ed3a9957deed00da508cbf`；Windows 0.5.9 / macOS 0.5.6。
+基于 [Myf-ricey/GooglePiggy_DesktopPet](https://github.com/Myf-ricey/GooglePiggy_DesktopPet)，优先保留原作动画和交互。
 
-**首版目标：Ubuntu 22.04 x86_64、GNOME/X11、Python 3.11。当前是移植测试版，实际验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。**
-运行时固定 PySide6 / Shiboken 6.8.3，以保留 Python 3.11 下的持续绘图稳定性。
-Wayland 暂未支持原生桌宠定位；请使用登录界面中的 Ubuntu on Xorg 会话。
+## 支持基线
 
-![Linux 界面预览；使用模拟任务展示原作动画、子代理、权限气泡和完成效果](docs/linux-preview.png)
+- Ubuntu 22.04 LTS **Desktop，x86_64**。
+- GNOME 的 **Ubuntu on Xorg** 会话。原生 Wayland 暂不支持；可在登录界面的齿轮菜单中选择 Xorg。
+- 源码使用 Ubuntu 22.04 自带的 **Python 3.10** 创建 `.venv`，不下载其他 Python 版本。
+- 便携包在原生 `ubuntu:22.04` 容器中用 Python 3.10 构建，包含运行时、Qt 和中文字体。
+- Codex 联动是可选功能；未安装 Codex 时也可以使用桌宠。
 
-上图使用模拟任务展示界面，不包含真实聊天内容。
+![Linux 界面预览，使用模拟任务展示](docs/linux-preview.png)
 
-## 便携包
+## 从 Releases 安装
 
-完整解压 Linux 包到固定目录，运行 `./start-linux.sh`。包内包含专用 Python 3.11 和 Qt，无需改变系统 Python。
-[下载 0.5.9 Linux 测试版](https://github.com/Rubbin1926/GooglePiggy_DesktopPet/releases/tag/v0.5.9-linux)。
-需要应用菜单入口、当前用户自启动和 Codex 联动时运行：
+[下载 Linux 测试版](https://github.com/Rubbin1926/GooglePiggy_DesktopPet/releases/tag/v0.5.9-linux)，完整解压到固定目录：
 
 ```sh
-./install-linux.sh
+mkdir -p GooglePiggy
+tar -xzf GooglePiggy-0.5.9-linux-x86_64.tar.gz -C GooglePiggy
+cd GooglePiggy
+./install-deps-linux.sh
+./start-linux.sh
 ```
 
-安装器会登记十二项 `GooglePiggy Linux` Hook。请在 **Codex 设置 → Hooks** 或 CLI 的 **`/hooks`** 中核对命令并信任，随后新建聊天或重启客户端。
-安装器不会改写信任数据库。不要信任不认识的其他 Hook。
+`install-deps-linux.sh` 检查 `requirements-linux-apt.txt` 中的标准 Ubuntu 桌面库、`xdg-utils` 和中文字体，只通过 APT 安装缺少的包；普通用户需要输入 sudo 密码。
+便携包本身不需要 pip 或额外的 Python 版本。
 
-可使用 `./install-linux.sh --no-autostart` 或 `--no-hooks` 取消对应登记。
-安装位置需要保留；移动目录后重新运行安装器，并重新审核变更的 Hook。
+登记应用菜单入口和自启动、暂不启用 Codex 联动：
+
+```sh
+./install-linux.sh --no-hooks
+```
+
+启用 Codex 联动时，先安装 Codex，再运行 `./install-linux.sh`，在 Codex 设置 → Hooks 或 CLI `/hooks` 中审核十二项 `GooglePiggy Linux` Hook，随后新建聊天或重启客户端。
+`--no-autostart` 可跳过自启动登记。程序目录需要保留；移动后重新运行安装器。
 
 ## 从源码运行
 
 ```sh
+git clone https://github.com/Rubbin1926/GooglePiggy_DesktopPet.git
+cd GooglePiggy_DesktopPet
 ./setup-linux.sh
 ./start-linux.sh
-./install-linux.sh
 ```
 
-安装脚本只在项目的 `.tools/`、`.runtime/`、`.venv/`、`.uv-cache/` 和 `.native/` 下配置工具与依赖。
-已有 `.venv` 必须使用 Python 3.11，脚本不会覆盖不同版本的环境。
-`uv` 固定版本及下载校验值；缺失的 Python 3.11 下载到项目目录，禁止向全局 bin 安装命令。
-启动脚本固定使用 `.venv/bin/python`，不需要激活环境。
-
-Ubuntu 系统的 `/usr/bin/python3`、Shell 启动文件、Conda base、Isaac Sim 的解释器和依赖都不由安装脚本修改。
-Qt 所需的 `libxcb-cursor0` 缺失时，从 Ubuntu APT 源下载并解压到 `.native/`，只由桌宠加载，不安装系统包。
-中文 Noto CJK 字体缺失时也解压到项目目录；便携包附带字体和对应许可。
+`setup-linux.sh` 自动补齐标准运行依赖以及 `python3-venv`，用 `/usr/bin/python3` 创建 Python 3.10 虚拟环境，并安装锁定的 Python 包。
+启动脚本固定使用 `.venv/bin/python`，不需要手动激活。
+已有非 3.10 的 `.venv` 时，先将其移走或改名再运行安装脚本。
+PySide6 / Shiboken 固定为兼容版本 6.8.3。
 
 ## 交互
 
@@ -79,22 +84,23 @@ Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留�
 预发布包不会触发自动升级。源码运行通过 Git 更新，不直接替换源码目录。
 
 卸载运行 `./uninstall-linux.sh`，移除本项目的应用入口、自启动及 Hook，保留用户状态和备份。
-退出程序后可以手动移走便携目录；其他项目和 Isaac Sim 无需改动。
+退出程序后可以手动移走便携目录。
 
-## 开发与验证
+## 构建与最小检查
+
+推荐使用干净的 Ubuntu 22.04 容器构建，构建过程仅执行三项兼容性检查、资源校验和两秒窗口启动：
 
 ```sh
-.venv/bin/python linux_pet.py --qa-only
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tools.test_linux_port tools.test_state_audit tools.test_compressed_rollout tools.test_internal_memory -q
-.venv/bin/python -m pip install -r requirements-linux-build.txt
-./build-linux.sh
+docker build --target build -f Dockerfile.linux -t googlepiggy-build .
+container=$(docker create googlepiggy-build)
+docker cp "$container:/app/dist/." ./dist/
+docker rm "$container"
 ```
 
-在 Ubuntu 22.04 上构建以保持 glibc 基线。输出位于 `dist/GooglePiggy/` 与 `dist/GooglePiggy-版本-linux-x86_64.tar.gz`。
-不要在正在使用的安装目录上重新构建；先构建到 `dist/`，验证后再替换或使用更新流程。
+原生 Ubuntu 22.04 上构建时，先安装 `python3-dev binutils`，运行 `./setup-linux.sh` 后，在虚拟环境内安装 `requirements-linux-build.txt`，再运行 `./build-linux.sh`。
+构建脚本不自动执行完整回归。Linux CI 为手动触发。
 
-上游部分文件的已提交行尾与 `.gitattributes` 不一致；本移植不批量改写 Windows / macOS 文件。
-开发时如遇到首次克隆即出现的行尾差异，可在本地 `.git/info/attributes` 添加 `* -text` 保留原始字节。
+输出为 `dist/GooglePiggy/`、Linux 压缩包和 `SHA256SUMS.txt`。不要在正在使用的程序目录上重新构建。
+上游部分文件已提交的行尾与 `.gitattributes` 不一致；开发时如出现初始行尾差异，可在本地 `.git/info/attributes` 添加 `* -text`。
 
-程序代码遵循原仓库 [MIT License](LICENSE)，角色与动画保留 [ASSET-NOTICE.md](ASSET-NOTICE.md)。
-运行时依赖的许可证见 [THIRD-PARTY-LINUX.md](THIRD-PARTY-LINUX.md)。
+程序代码遵循原仓库 [MIT License](LICENSE)，角色与动画保留 [ASSET-NOTICE.md](ASSET-NOTICE.md)。依赖许可见 [THIRD-PARTY-LINUX.md](THIRD-PARTY-LINUX.md)。

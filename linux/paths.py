@@ -36,7 +36,6 @@ def codex_home():
 def font_file(bold=False):
     name = 'NotoSansCJK-'+('Bold' if bold else 'Regular')+'.ttc'
     roots = [Path(getattr(sys, '_MEIPASS', app_root()))/'fonts',
-             app_root()/'.native/usr/share/fonts/opentype/noto',
              Path('/usr/share/fonts/opentype/noto')]
     return next((root/name for root in roots if (root/name).is_file()), None)
 

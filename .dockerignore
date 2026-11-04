@@ -1,0 +1,14 @@
+.git
+.venv*
+.native
+.runtime
+.tools
+.uv-cache
+**/__pycache__
+*.log
+build
+dist*
+qa
+macos
+releases
+tests

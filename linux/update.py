@@ -90,8 +90,11 @@ def safe_path(name):
 
 
 def digest(path):
+    checksum = hashlib.sha256()
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        while chunk := stream.read(1024*1024):
+            checksum.update(chunk)
+    return checksum.hexdigest()
 
 
 def validate_tree(root, expected):
