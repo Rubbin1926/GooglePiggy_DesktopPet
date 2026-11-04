@@ -63,6 +63,12 @@ def request_permission(payload, directory, timeout=590):
     summary = permission_summary(payload)
     if not summary or not heartbeat_fresh(directory):
         return {}
+    actor = payload.get('agent_id') or payload.get('session_id')
+    current = read_json(actor_path(directory, actor)) if actor else {}
+    current = {} if current is None else current
+    if (not isinstance(current, dict) or current.get('event') in {'Stop','TaskCompleteFallback','SessionEnd','SubagentStop'} or
+        current.get('turn_id') and payload.get('turn_id') and current['turn_id'] != payload['turn_id']):
+        return {}  # Do not overwrite a completed or newer turn with a stale request.
     request_id = uuid.uuid4().hex
     requests = directory/'permission-requests'
     request = requests/(request_id+'.request.json')
@@ -78,7 +84,6 @@ def request_permission(payload, directory, timeout=590):
     publish_event(directory, dict(event_payload(payload), permission_request_id=request_id))
     if mode == 'codex':
         return {}  # Native approval proceeds immediately; the file is only a UI notice.
-    actor = payload.get('agent_id') or payload.get('session_id')
     try:
         while time.time()-now < timeout:
             state = read_json(actor_path(directory, actor)) if actor else {}

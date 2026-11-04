@@ -101,6 +101,21 @@ class IntegrationTests(unittest.TestCase):
 
 
 class HookTests(unittest.TestCase):
+    def test_completed_or_replaced_turn_does_not_publish_permission(self):
+        from codex_bridge import actor_path
+        for event,turn in [('Stop','t'),('SessionEnd','t'),('UserPromptSubmit','new')]:
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)
+                atomic_json(root/'pig-heartbeat.json', {'pid':os.getpid(),'updated_at':utc_now()})
+                handle({'hook_event_name':event,'session_id':'A','turn_id':turn},root)
+                before=actor_path(root,'A').read_bytes()
+                with patch('linux.hook.time.sleep',side_effect=AssertionError('stale permission must not wait')):
+                    result=handle({'hook_event_name':'PermissionRequest','session_id':'A','turn_id':'t',
+                                   'tool_name':'Bash','tool_input':{'command':'example'}},root)
+                self.assertEqual(result,{})
+                self.assertEqual(actor_path(root,'A').read_bytes(),before)
+                self.assertFalse(list((root/'permission-requests').glob('*.request.json')))
+
     def test_native_approval_returns_without_waiting_and_keeps_notice(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

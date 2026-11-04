@@ -28,6 +28,7 @@ class Node:
     rollout: str = ''
     observation_expired: bool = False
     turn_started: float = 0
+    completion_event: str = ''
 
 
 class FamilyStore:
@@ -65,6 +66,7 @@ class FamilyStore:
             if node.turn:
                 node.retired.add(node.turn)
             node.turn, node.completion = turn, None
+            node.completion_event = ''
             node.turn_started = now
         elif turn and node.turn and turn != node.turn:
             return False
@@ -74,12 +76,15 @@ class FamilyStore:
             return False
         if node.status == 'interrupted' and event not in BEGINS | {'PermissionRequest','SessionEnd'}:
             return False
-        if (event in {'PreToolUse','Stop','TaskCompleteFallback'} and node.payload.get('event') == 'PostCompact' and
+        if (event in {'PreToolUse','PermissionRequest','Stop','TaskCompleteFallback'} and node.completion_event == 'PostCompact' and
             now > node.last_event):
-            # Compaction may end while the same turn continues. A fresh tool
-            # start is authoritative; a late tool result alone cannot resume.
+            # SessionStart may refresh payload after compaction. Retain its
+            # completion kind until fresh work/approval or the real turn end;
+            # a late tool result alone cannot resume the turn.
             node.completion = None
-        if node.completion is not None and not begins and event in {'PreToolUse','PostToolUse','Stop','SubagentStop','TaskCompleteFallback'}:
+            node.completion_event = ''
+        if node.completion is not None and not begins and event in {'PreToolUse','PostToolUse','Stop','SubagentStop','TaskCompleteFallback',
+                                                                   'PermissionRequest','PermissionDecision','PermissionNoDecision'}:
             return False
         if node.status == 'compacting' and event in {'PreToolUse','PostToolUse'}:
             return False
@@ -92,10 +97,12 @@ class FamilyStore:
         node.active = status in ACTIVE
         if event in {'Stop','SubagentStop','TaskCompleteFallback','SessionEnd','PostCompact'}:
             node.active, node.completion = False, now
+            node.completion_event = event
         if event in {'Stop','TaskCompleteFallback'} and not node.parent:
             node.unread, node.result = True, True
         if begins:
             node.active, node.completion, node.unread, node.result = True, None, False, False
+            node.completion_event = ''
             if not node.parent:
                 self.pending = actor
         if not self.selected:

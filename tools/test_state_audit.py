@@ -92,6 +92,26 @@ class StateAuditTests(unittest.TestCase):
         self.assertTrue(store.ingest(dict(session_id='target',event='Stop',turn_id='t'),105))
         self.assertFalse(store.ingest(dict(session_id='target',event='PreToolUse',turn_id='t'),106))
 
+    def test_compaction_session_restart_and_permission_do_not_swallow_stop(self):
+        store=FamilyStore()
+        for i,event in enumerate(('UserPromptSubmit','PreCompact','PostCompact','SessionStart',
+                                  'PreToolUse','PermissionRequest','Stop')):
+            self.assertTrue(store.ingest(dict(session_id='target',event=event,turn_id='t'),100+i),event)
+        self.assertEqual(store.nodes['target'].status,'success')
+        self.assertFalse(store.nodes['target'].active)
+        self.assertFalse(store.work_tokens())
+
+    def test_terminal_turn_rejects_late_permission_but_new_turn_accepts_it(self):
+        store=FamilyStore()
+        for i,event in enumerate(('UserPromptSubmit','Stop')):
+            store.ingest(dict(session_id='target',event=event,turn_id='t'),100+i)
+        for i,event in enumerate(('PermissionRequest','PermissionDecision','PermissionNoDecision')):
+            self.assertFalse(store.ingest(dict(session_id='target',event=event,status='permission',turn_id='t'),102+i))
+        self.assertFalse(store.nodes['target'].active)
+        self.assertTrue(store.ingest(dict(session_id='target',event='UserPromptSubmit',turn_id='new'),110))
+        self.assertTrue(store.ingest(dict(session_id='target',event='PermissionRequest',turn_id='new'),111))
+        self.assertEqual(store.nodes['target'].status,'permission')
+
 
 if __name__=='__main__':
     from codex_bridge import atomic_json
