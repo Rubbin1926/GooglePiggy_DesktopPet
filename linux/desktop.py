@@ -9,7 +9,7 @@ from datetime import datetime
 
 from PIL import Image
 from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QCursor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPainter
+from PySide6.QtGui import QActionGroup, QColor, QCursor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QFormLayout,
                               QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
 
@@ -23,7 +23,7 @@ from update_notice import UpdateNotice
 from linux import VERSION
 from linux.geometry import Screen, fit_delta, inside, intersection, tail_rects, touched_edge, translate, union
 from linux.integration import autostart_enabled, set_autostart
-from linux.paths import app_root, font_file, pid_alive, read_json, resource_root, state_dir, utc_now
+from linux.paths import app_root, approval_mode, font_file, pid_alive, read_json, resource_root, state_dir, utc_now
 from linux.render import Renderer, resize
 from linux.update import Updater
 from linux.x11 import InputShape
@@ -180,6 +180,7 @@ class PetWindow(QWidget):
         self.now, self.wall = time.monotonic(), time.time()
         self.leisure = Leisure(self.now)
         self.appearance = Appearance(directory/'appearance.json')
+        self.approval_mode = approval_mode(directory)
         self.renderer = Renderer(resource_root(), self.animations)
         self.input_shape = InputShape(QApplication.platformName() == 'xcb')
         self.tails = {edge: Image.open(resource_root()/'edge-tail'/(edge+'.png')).convert('RGBA') for edge in ('left', 'right', 'top', 'bottom')}
@@ -332,8 +333,15 @@ class PetWindow(QWidget):
                 expired = True
             stale = node and (node.status == 'interrupted' or node.completion is not None or
                               value.get('turn_id') and node.turn and value['turn_id'] != node.turn)
+            native = value.get('approval_mode') == 'codex'
+            if native and node:
+                try:
+                    created = datetime.fromisoformat(value['created_at'].replace('Z', '+00:00')).timestamp()
+                except (KeyError, TypeError, ValueError):
+                    created = 0
+                stale = stale or (node.last_event > created and node.status != 'permission')
             response = folder/(request_id+'.response.json')
-            if expired or stale or not pid_alive(value.get('hook_pid')):
+            if expired or stale or not native and not pid_alive(value.get('hook_pid')):
                 path.unlink(missing_ok=True)
                 response.unlink(missing_ok=True)
                 continue
@@ -603,9 +611,20 @@ class PetWindow(QWidget):
         self.dirty = True
 
     def permission_decision(self, decision):
-        if not self.permission or decision not in {'allow', 'deny'}:
+        if not self.permission:
             return
         request_id = self.permission['request_id']
+        if self.permission.get('approval_mode') == 'codex':
+            if decision == 'open':
+                actor = self.permission.get('agent_id') or self.permission.get('session_id')
+                self.open_thread(actor)
+            if decision in {'open', 'dismiss'}:
+                (self.directory/'permission-requests'/(request_id+'.request.json')).unlink(missing_ok=True)
+                self.permission = None
+                self.dirty = True
+            return
+        if decision not in {'allow', 'deny'}:
+            return
         if decision == 'allow' and request_id not in self.permission_viewed:
             return
         atomic_json(self.directory/'permission-requests'/(request_id+'.response.json'),
@@ -650,6 +669,18 @@ class PetWindow(QWidget):
         rest = menu.addAction('休息模式')
         rest.setEnabled(not bool(self.store.work_tokens()))
         appearance = menu.addAction('外观…')
+        approvals = menu.addMenu('审批方式')
+        approval_group = QActionGroup(menu)
+        approval_group.setExclusive(True)
+        approval_choices = {}
+        for mode, label in [('pet', '小猪审批（默认）'), ('codex', 'Codex 原生审批，小猪提示跳转')]:
+            action = approvals.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self.approval_mode == mode)
+            approval_group.addAction(action)
+            approval_choices[action] = mode
+        approvals.setEnabled(not bool(self.permission_actors))
+        approvals.setToolTip('先处理当前审批，再切换后续请求的审批方式。')
         update = menu.addAction('正在检查更新…' if self.updater.checking else '检查更新…')
         try:
             auto = autostart_enabled()
@@ -665,6 +696,8 @@ class PetWindow(QWidget):
                 self.quit()
             elif chosen == appearance:
                 self.show_appearance()
+            elif chosen in approval_choices:
+                self.set_approval_mode(approval_choices[chosen])
             elif chosen == autostart:
                 set_autostart(not auto)
             elif chosen == update:
@@ -680,6 +713,15 @@ class PetWindow(QWidget):
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, 'GooglePiggy', str(error))
         self.dirty = True
+
+    def set_approval_mode(self, mode):
+        if mode not in {'pet', 'codex'}:
+            return
+        value = read_json(self.directory/'settings.json')
+        value = value if isinstance(value, dict) else {}
+        value['approvalMode'] = mode
+        atomic_json(self.directory/'settings.json', value)
+        self.approval_mode = mode
 
     def poll_updates(self):
         while True:
@@ -750,6 +792,7 @@ class PetWindow(QWidget):
                  'hidden_edge': self.hidden_edge, 'tail_visible': self.tail.isVisible(), 'leisure_phase': self.leisure.phase,
                  'appearance': self.appearance.values, 'appearance_preview': {'dialog': self.preview_dialog, 'task': self.preview_task},
                  'permission_request_id': self.permission['request_id'] if self.permission else '', 'frames_rendered': self.frames_rendered,
+                 'approval_mode': self.approval_mode,
                  'update_phase': self.notice.phase if self.notice else None, 'unread_sync': self.observer.unread_supported}
         atomic_json(self.directory/'pig-heartbeat.json', value)
 

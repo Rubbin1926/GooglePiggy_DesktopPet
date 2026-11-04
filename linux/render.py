@@ -136,6 +136,7 @@ class Renderer:
     def permission(self, pet, canvas, preview):
         request = {'summary': '这是外观预览。你可以调整对话框大小、颜色、距离与不透明度。'} if preview else pet.permission
         detail = str(request.get('summary') or 'Codex 请求权限')
+        native = not preview and request.get('approval_mode') == 'codex'
         lines = self.permission_lines(detail)
         pet.permission_page = min(pet.permission_page, max(0, len(lines)-11))
         visible = lines[pet.permission_page:pet.permission_page+11]
@@ -147,23 +148,27 @@ class Renderer:
         draw = ImageDraw.Draw(canvas)
         rose = (176, 124, 129, 255)
         draw.ellipse((left+20, top+21, left+26, top+27), fill=rose)
-        draw.text((left+34, top+17), '外观预览 · 示例对话框' if preview else 'CODEX · 需要你的确认',
+        title = '外观预览 · 示例对话框' if preview else 'CODEX · 请在 Codex 中确认' if native else 'CODEX · 需要你的确认'
+        draw.text((left+34, top+17), title,
                   font=font(11), fill=pet.appearance.color('dialogTextColor', rose))
         for i, line in enumerate(visible):
             draw.text((left+20, top+43+i*20), line, font=font(14), fill=pet.appearance.color('dialogTextColor', (76, 67, 70, 255)))
         if not preview and pet.permission_page+11 >= len(lines):
             pet.permission_viewed.add(request['request_id'])
-        self.buttons = {'deny': (left+20, bottom-48, left+120, bottom-16), 'allow': (right-136, bottom-48, right-20, bottom-16)}
+        self.buttons = {('dismiss' if native else 'deny'): (left+20, bottom-48, left+120, bottom-16),
+                        ('open' if native else 'allow'): (right-136, bottom-48, right-20, bottom-16)}
         for action, button in self.buttons.items():
             disabled = not preview and action == 'allow' and request['request_id'] not in pet.permission_viewed
-            fill = (223, 207, 214, 255) if disabled else rose if action == 'allow' else (242, 238, 231, 255)
+            primary = action in {'allow', 'open'}
+            fill = (223, 207, 214, 255) if disabled else rose if primary else (242, 238, 231, 255)
             layer = Image.new('RGBA', canvas.size)
             ImageDraw.Draw(layer).rounded_rectangle(button, 10, fill=fill)
             canvas.alpha_composite(opacity(layer, pet.appearance.buttonOpacity))
             draw = ImageDraw.Draw(canvas)
-            draw.text(((button[0]+button[2])/2, (button[1]+button[3])/2), '允许一次' if action == 'allow' else '拒绝',
+            label = {'allow': '允许一次', 'deny': '拒绝', 'open': '前往 Codex', 'dismiss': '关闭提示'}[action]
+            draw.text(((button[0]+button[2])/2, (button[1]+button[3])/2), label,
                       font=font(13), anchor='mm', fill=pet.appearance.color('buttonTextColor',
-                      (255, 255, 255, 255) if action == 'allow' and not disabled else (82, 76, 76, 255)))
+                      (255, 255, 255, 255) if primary and not disabled else (82, 76, 76, 255)))
         if preview:
             self.buttons = {}
 

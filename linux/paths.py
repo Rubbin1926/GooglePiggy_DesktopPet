@@ -48,6 +48,11 @@ def read_json(path):
         return None
 
 
+def approval_mode(directory=None):
+    value = read_json(Path(directory or state_dir())/'settings.json')
+    return 'codex' if isinstance(value, dict) and value.get('approvalMode') == 'codex' else 'pet'
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 

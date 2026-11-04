@@ -5,13 +5,19 @@ COPY install-deps-linux.sh requirements-linux-apt.txt ./
 RUN ./install-deps-linux.sh --source \
     && apt-get install -y --no-install-recommends python3-dev binutils \
     && rm -rf /var/lib/apt/lists/*
-COPY . .
-RUN ./setup-linux.sh \
+COPY requirements.txt requirements-linux.txt requirements-linux.lock requirements-linux-build.txt ./
+RUN /usr/bin/python3 -m venv .venv \
+    && .venv/bin/python -m pip install --disable-pip-version-check --upgrade pip \
     && .venv/bin/python -m pip install --disable-pip-version-check -r requirements-linux-build.txt
+COPY . .
 RUN QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
     tools.test_linux_port.UpdateTests.test_package_validation_detects_tampering_and_extra_files \
     tools.test_linux_port.HookTests.test_real_hook_process_does_not_import_qt \
     tools.test_linux_port.QtTests.test_qt_void_bindings_do_not_consume_none_references -q \
+    && QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
+    tools.test_linux_port.HookTests.test_native_approval_returns_without_waiting_and_keeps_notice \
+    tools.test_linux_port.QtTests.test_native_notice_has_only_navigation_and_mode_persists \
+    tools.test_linux_port.HookTests.test_permission_decisions_and_mismatched_response -q \
     && ./build-linux.sh
 RUN QT_QPA_PLATFORM=offscreen dist/GooglePiggy/googlepiggy \
     --state-dir /tmp/googlepiggy-build-smoke --no-observe --no-update-check --quit-after 2

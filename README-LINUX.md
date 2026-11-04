@@ -39,6 +39,8 @@ cd GooglePiggy
 ## 从源码运行
 
 ```sh
+sudo apt-get update
+sudo apt-get install -y git
 git clone https://github.com/Rubbin1926/GooglePiggy_DesktopPet.git
 cd GooglePiggy_DesktopPet
 ./setup-linux.sh
@@ -50,6 +52,15 @@ cd GooglePiggy_DesktopPet
 已有非 3.10 的 `.venv` 时，先将其移走或改名再运行安装脚本。
 PySide6 / Shiboken 固定为兼容版本 6.8.3。
 
+## 审批方式
+
+右键小猪 → **审批方式**，设置会保存供后续启动使用。请先处理当前审批，再切换后续请求的模式。
+
+- **小猪审批（默认）**：小猪显示“允许一次 / 拒绝”。此模式由 Hook 接管审批，Codex 不再重复弹出原生确认。
+- **Codex 原生审批，小猪提示跳转**：Hook 立即交回 Codex，小猪只显示提示和“前往 Codex / 关闭提示”；允许或拒绝均在 Codex 中完成。
+
+两种模式互斥，不会让两个窗口分别提交同一审批。
+
 ## 交互
 
 - 待机呼吸，点击躺平；拖拽全家时播放拱动动画。
@@ -57,7 +68,7 @@ PySide6 / Shiboken 固定为兼容版本 6.8.3。
 - 每个聊天是一户家庭。鼠标移到大猪上显示任务列表，点击任务切换并打开 Codex 聊天。
 - 子代理显示为最多三只小猪，多出的显示 `+N`；切换家庭保留各自动画进度。
 - 拖到桌面外边缘隐藏，点击尾巴提前唤回。运行中的家庭隐藏后，等待其主任务成功且子代理结束再弹出庆祝，其他聊天的事件不会提前唤回。
-- 权限气泡支持滚动、拒绝和允许一次；长说明需滚动至末尾才能允许。没有窗口、请求过期或详情缺失时使用 Codex 原生确认。
+- 默认权限气泡支持滚动、拒绝和允许一次；长说明需滚动至末尾才能允许。原生审批模式仅提示和跳转。没有窗口、请求过期或详情缺失时使用 Codex 原生确认。
 - 右键进入休息模式、打开外观、自启动、检查更新或退出。
 - 外观设置独立调整猪猪、对话框和任务栏；预览显示在实际位置，不创建任务或发送权限决定。
 
@@ -67,6 +78,7 @@ Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留�
 ## 状态与隐私
 
 - 用户状态：`${XDG_STATE_HOME:-~/.local/state}/googlepiggy/`。
+- 审批方式：状态目录中的 `settings.json`。
 - 应用入口：`${XDG_DATA_HOME:-~/.local/share}/applications/googlepiggy-linux.desktop`。
 - 自启动：`${XDG_CONFIG_HOME:-~/.config}/autostart/googlepiggy-linux.desktop`。
 - Hook：`${CODEX_HOME:-~/.codex}/hooks.json`；变更前备份到状态目录的 `hook-backups/`，保留其他 Hook。
@@ -88,13 +100,15 @@ Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留�
 
 ## 构建与最小检查
 
-推荐使用干净的 Ubuntu 22.04 容器构建，构建过程仅执行三项兼容性检查、资源校验和两秒窗口启动：
+推荐使用干净的 Ubuntu 22.04 容器构建，构建过程仅执行基础兼容性、审批方式的针对性检查和两秒窗口启动。Docker 命令需要具有访问 Docker 服务的权限：
 
 ```sh
-docker build --target build -f Dockerfile.linux -t googlepiggy-build .
-container=$(docker create googlepiggy-build)
-docker cp "$container:/app/dist/." ./dist/
-docker rm "$container"
+sudo apt-get install -y docker.io
+sudo docker build --target build -f Dockerfile.linux -t googlepiggy-build .
+build_container=$(sudo docker create googlepiggy-build)
+mkdir -p dist
+sudo docker cp "$build_container:/app/dist/." ./dist/
+sudo docker rm "$build_container"
 ```
 
 原生 Ubuntu 22.04 上构建时，先安装 `python3-dev binutils`，运行 `./setup-linux.sh` 后，在虚拟环境内安装 `requirements-linux-build.txt`，再运行 `./build-linux.sh`。

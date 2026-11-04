@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from codex_bridge import actor_path, atomic_json, publish_event
 from family_store import EVENT_STATUS
-from linux.paths import pid_alive, read_json, state_dir, utc_now
+from linux.paths import approval_mode, pid_alive, read_json, state_dir, utc_now
 
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
           'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop',
@@ -68,12 +68,16 @@ def request_permission(payload, directory, timeout=590):
     request = requests/(request_id+'.request.json')
     response = requests/(request_id+'.response.json')
     now = time.time()
+    mode = approval_mode(directory)
+    expires = now+(60 if mode == 'codex' else timeout)
     atomic_json(request, dict(request_id=request_id, created_at=utc_now(),
-                expires_at=datetime.fromtimestamp(now+timeout, timezone.utc).isoformat(),
+                expires_at=datetime.fromtimestamp(expires, timezone.utc).isoformat(),
                 session_id=payload.get('session_id', ''), agent_id=payload.get('agent_id', ''),
                 turn_id=payload.get('turn_id', ''), tool_name=payload.get('tool_name', 'Codex'),
-                summary=summary, hook_pid=os.getpid()))
+                summary=summary, hook_pid=os.getpid(), approval_mode=mode))
     publish_event(directory, dict(event_payload(payload), permission_request_id=request_id))
+    if mode == 'codex':
+        return {}  # Native approval proceeds immediately; the file is only a UI notice.
     actor = payload.get('agent_id') or payload.get('session_id')
     try:
         while time.time()-now < timeout:

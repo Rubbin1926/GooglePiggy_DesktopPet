@@ -28,9 +28,16 @@ cd GooglePiggy
 - `--no-autostart` 可跳过自启动登记；程序目录需要保留。
 - 卸载运行 `./uninstall-linux.sh`，用户状态和备份保留。
 
+## 审批方式可选
+
+右键小猪 → **审批方式**，默认保持“小猪审批”，可在小猪中允许一次或拒绝；这一模式不会再显示重复的 Codex 原生弹窗。
+也可切换为“Codex 原生审批，小猪提示跳转”：小猪显示“前往 Codex”，实际允许或拒绝由 Codex 完成。
+设置会保存；请先处理当前审批，再切换后续请求的模式。
+
 ## 从源码安装
 
-运行 `./setup-linux.sh`：脚本补齐标准桌面依赖及 `python3-venv`，使用 `/usr/bin/python3` 创建 Python 3.10 虚拟环境并安装锁定的包。
+先下载本页的 Source code（zip）并解压，再运行 `./setup-linux.sh`；也可先安装 Git 拉取仓库。
+脚本补齐标准桌面依赖及 `python3-venv`，使用 `/usr/bin/python3` 创建 Python 3.10 虚拟环境并安装锁定的包。
 构建便携包另需 `python3-dev binutils`，或使用仓库的 `Dockerfile.linux`。
 
 保留原作动画、多任务、子代理、拖拽贴边、权限气泡、外观与更新回滚。

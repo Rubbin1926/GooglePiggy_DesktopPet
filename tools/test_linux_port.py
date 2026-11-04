@@ -101,6 +101,20 @@ class IntegrationTests(unittest.TestCase):
 
 
 class HookTests(unittest.TestCase):
+    def test_native_approval_returns_without_waiting_and_keeps_notice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            atomic_json(root/'settings.json', {'approvalMode': 'codex'})
+            atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
+            payload = {'hook_event_name': 'PermissionRequest', 'session_id': 'A', 'turn_id': 't',
+                       'tool_name': 'Bash', 'tool_input': {'command': 'example'}}
+            with patch('linux.hook.time.sleep', side_effect=AssertionError('native approval must not wait')):
+                self.assertEqual(handle(payload, root), {})
+            requests = list((root/'permission-requests').glob('*.request.json'))
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(json.loads(requests[0].read_text())['approval_mode'], 'codex')
+            self.assertFalse(list((root/'permission-requests').glob('*.response.json')))
+
     def test_real_hook_process_does_not_import_qt(self):
         with tempfile.TemporaryDirectory() as tmp:
             code = "import sys,linux_pet;sys.argv=['linux_pet','--hook','--state-dir',sys.argv[1]];linux_pet.main();assert not any(x.startswith('PySide6') for x in sys.modules)"
@@ -504,6 +518,29 @@ class QtTests(unittest.TestCase):
         with patch('linux.desktop.QDesktopServices.openUrl', return_value=False), patch('linux.desktop.QMessageBox.information'):
             self.window.open_thread('A')
         self.assertTrue(self.window.store.nodes['A'].unread)
+
+    def test_native_notice_has_only_navigation_and_mode_persists(self):
+        from linux.paths import approval_mode
+        w = self.window
+        w.set_approval_mode('codex')
+        self.assertEqual(approval_mode(self.root), 'codex')
+        self.dispatch('UserPromptSubmit')
+        w.heartbeat(force=True)
+        handle({'hook_event_name': 'PermissionRequest', 'session_id': 'A', 'turn_id': 't',
+                'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, self.root)
+        request = next((self.root/'permission-requests').glob('*.request.json'))
+        value = json.loads(request.read_text());value['hook_pid'] = 99999999
+        atomic_json(request, value)
+        w.poll();w.dirty = True;w.tick()
+        self.assertEqual(set(w.renderer.buttons), {'open', 'dismiss'})
+        w.permission_decision('allow')
+        self.assertFalse(list((self.root/'permission-requests').glob('*.response.json')))
+        with patch.object(w, 'open_thread') as opener:
+            w.permission_decision('open')
+            opener.assert_called_once_with('A')
+        self.assertFalse(request.exists())
+        w.set_approval_mode('pet')
+        self.assertEqual(approval_mode(self.root), 'pet')
 
     def test_pending_permission_is_stable_and_child_click_changes_focus(self):
         from datetime import datetime, timezone
