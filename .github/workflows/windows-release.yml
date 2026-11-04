@@ -6,6 +6,7 @@ on:
     tags:
       - "v*"
       - "!v*-macos"
+      - "!v*-linux"
 
 permissions:
   contents: write
