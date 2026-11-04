@@ -2,5 +2,5 @@
   "version": "6.8.3",
   "source_archive": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtsvg-everywhere-src-6.8.3.tar.xz",
   "archive_sha256": "35eb516460f00f264eb504baa253432384351cf23fb9980a5857190e8deef438",
-  "notice_files": 4
+  "notice_files": 3
 }
