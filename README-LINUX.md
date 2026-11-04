@@ -5,11 +5,17 @@
 上游基线：`1f69e17ff28666e735ed3a9957deed00da508cbf`；Windows 0.5.9 / macOS 0.5.6。
 
 **首版目标：Ubuntu 22.04 x86_64、GNOME/X11、Python 3.11。当前是移植测试版，实际验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。**
+运行时固定 PySide6 / Shiboken 6.8.3，以保留 Python 3.11 下的持续绘图稳定性。
 Wayland 暂未支持原生桌宠定位；请使用登录界面中的 Ubuntu on Xorg 会话。
+
+![Linux 界面预览；使用模拟任务展示原作动画、子代理、权限气泡和完成效果](docs/linux-preview.png)
+
+上图使用模拟任务展示界面，不包含真实聊天内容。
 
 ## 便携包
 
 完整解压 Linux 包到固定目录，运行 `./start-linux.sh`。包内包含专用 Python 3.11 和 Qt，无需改变系统 Python。
+[下载 0.5.9 Linux 测试版](https://github.com/Rubbin1926/GooglePiggy_DesktopPet/releases/tag/v0.5.9-linux)。
 需要应用菜单入口、当前用户自启动和 Codex 联动时运行：
 
 ```sh
@@ -86,6 +92,9 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tools.test_linux_port too
 
 在 Ubuntu 22.04 上构建以保持 glibc 基线。输出位于 `dist/GooglePiggy/` 与 `dist/GooglePiggy-版本-linux-x86_64.tar.gz`。
 不要在正在使用的安装目录上重新构建；先构建到 `dist/`，验证后再替换或使用更新流程。
+
+上游部分文件的已提交行尾与 `.gitattributes` 不一致；本移植不批量改写 Windows / macOS 文件。
+开发时如遇到首次克隆即出现的行尾差异，可在本地 `.git/info/attributes` 添加 `* -text` 保留原始字节。
 
 程序代码遵循原仓库 [MIT License](LICENSE)，角色与动画保留 [ASSET-NOTICE.md](ASSET-NOTICE.md)。
 运行时依赖的许可证见 [THIRD-PARTY-LINUX.md](THIRD-PARTY-LINUX.md)。

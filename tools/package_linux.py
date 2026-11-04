@@ -1,9 +1,11 @@
 """Stage portable launchers, licenses, update manifest and a reproducible file list."""
+import ast
 import json
 from pathlib import Path
 import shutil
 import sys
 import tarfile
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from linux import VERSION
@@ -29,8 +31,34 @@ def main():
         shutil.copy2(root/name, folder/name)
     for script in folder.glob('*.sh'):
         script.chmod(0o755)
+    preview = root/'docs/linux-preview.png'
+    if preview.is_file():
+        (folder/'docs').mkdir(exist_ok=True)
+        shutil.copy2(preview, folder/'docs/linux-preview.png')
     if (folder/'_internal/licenses').is_dir():
         shutil.copytree(folder/'_internal/licenses', folder/'licenses', dirs_exist_ok=True)
+    if (root/'licenses').is_dir():
+        shutil.copytree(root/'licenses', folder/'licenses', dirs_exist_ok=True)
+    # Keep the copyright statements for the actual Ubuntu library inputs.
+    stack = [ast.literal_eval((root/'build/linux_pet/Analysis-00.toc').read_text())]
+    system_paths = set()
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (tuple, list)):
+            if len(item) == 3 and isinstance(item[1], str) and item[1].startswith(('/lib/', '/usr/lib/')) and item[2] in ('BINARY', 'EXTENSION'):
+                path = item[1]
+                system_paths.update((path, path[4:] if path.startswith('/usr/lib/') else '/usr'+path))
+            else:
+                stack.extend(item)
+    result = subprocess.run(['dpkg-query', '-S', *sorted(system_paths)], capture_output=True, text=True)
+    packages = {line.partition(': ')[0].split(':')[0] for line in result.stdout.splitlines() if ': ' in line}
+    for package in sorted(packages):
+        copyright = Path('/usr/share/doc')/package/'copyright'
+        if copyright.is_file():
+            target = folder/'licenses/Ubuntu'/package
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(copyright, target/'copyright')
+    shutil.copytree('/usr/share/common-licenses', folder/'licenses/Ubuntu/common-licenses', dirs_exist_ok=True)
     # Preserve the actual runtime license from the dedicated Python installation.
     python_license = Path(sys.base_prefix)/'lib/python3.11/LICENSE.txt'
     if python_license.is_file():
