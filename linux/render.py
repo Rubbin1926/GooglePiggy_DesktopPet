@@ -127,6 +127,15 @@ class Renderer:
             if node.unread:
                 draw.ellipse((left+12, rect[1]+13, left+19, rect[1]+20), fill=(47, 137, 229, 255))
             title = node.title
+            if not preview:
+                status = '等待审批' if node.id in pet.permission_actors else {
+                    'thinking': '思考中', 'working': '执行中', 'compacting': '整理上下文',
+                    'permission': '等待审批', 'interrupted': '已暂停', 'success': '已完成',
+                    'error': '出错', 'idle': '空闲',
+                }.get(node.status, '空闲')
+                if not node.active and pet.store.working(node, pet.wall):
+                    status = '子任务运行中'
+                title = status+' · '+title
             while title and draw.textlength(title, font=font(14)) > width-48:
                 title = title[:-2]+'…'
             draw.text((left+28, rect[1]+7), title, font=font(14), fill=ink)

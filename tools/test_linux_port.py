@@ -369,6 +369,83 @@ class QtTests(unittest.TestCase):
         self.window.dirty = True
         self.window.tick()
 
+    def menu_state(self, choose=''):
+        from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QMenu
+        state = {}
+        class Menu(QMenu):
+            def exec(menu, position):
+                for action in menu.actions():
+                    state[action.text()] = (action.isEnabled(), action.isChecked())
+                return next((action for action in menu.actions() if choose and action.text().startswith(choose)), None)
+        with patch('linux.desktop.QMenu', Menu):
+            self.window.menu(QPoint())
+        return state
+
+    def test_mode_menu_identifies_current_mode_and_all_rest_blockers(self):
+        self.assertEqual(self.menu_state()['状态互动（Codex）'], (False, True))
+        self.dispatch('UserPromptSubmit')
+        state = self.menu_state()
+        rest = next(label for label in state if label.startswith('休息模式'))
+        self.assertIn('任务进行中', rest)
+        self.assertFalse(state[rest][0])
+        self.dispatch('Interrupt')
+        self.assertFalse(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+        self.dispatch('UserPromptSubmit')
+        self.dispatch('Stop')
+        self.assertFalse(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+        self.window.now += 3
+        self.window.resolve_visual()
+        self.assertTrue(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+
+    def test_rest_menu_enters_sleep_and_codex_work_wakes_it(self):
+        w = self.window
+        self.menu_state('休息模式')
+        w.resolve_visual()
+        self.assertEqual(w.position[0], 'sleep_entry')
+        self.assertTrue(next(value[1] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+        w.now += w.animations['sleep_entry'].total_duration/1000+.01
+        w.resolve_visual()
+        self.assertEqual(w.position[0], 'sleep_body')
+        first = w.position
+        w.now += .2
+        w.resolve_visual()
+        self.assertNotEqual(w.position, first)
+        self.menu_state('状态互动')
+        w.resolve_visual()
+        self.assertEqual(w.position[0], 'idle')
+        self.menu_state('休息模式')
+        self.dispatch('UserPromptSubmit')
+        self.assertEqual(w.position[0], 'reading')
+        self.assertEqual(w.leisure.phase, 'awake')
+
+    def test_rest_menu_does_not_offer_rest_that_animation_would_cancel(self):
+        self.dispatch('UserPromptSubmit')
+        self.dispatch('Interrupt')
+        self.assertFalse(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+        self.dispatch('UserPromptSubmit')
+        self.dispatch('Stop')
+        self.assertFalse(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+
+    def test_task_list_keeps_chat_title_and_updates_status(self):
+        from PIL import ImageDraw
+        w = self.window
+        self.dispatch('UserPromptSubmit')
+        w.store.nodes['A'].title = '同一个聊天'
+        w.selector_visible = True
+        draw_text = ImageDraw.ImageDraw.text
+        for event, label in [('PreToolUse', '执行中'), ('Stop', '已完成')]:
+            self.dispatch(event)
+            w.selector_visible = True
+            texts = []
+            def capture(draw, xy, text, *args, **kwargs):
+                texts.append(text)
+                return draw_text(draw, xy, text, *args, **kwargs)
+            with patch('PIL.ImageDraw.ImageDraw.text', new=capture):
+                w.renderer.compose(w)
+            self.assertIn(label+' · 同一个聊天', texts)
+            self.assertEqual(w.store.nodes['A'].title, '同一个聊天')
+
     def test_click_plays_flat_and_drag_moves_the_family(self):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest

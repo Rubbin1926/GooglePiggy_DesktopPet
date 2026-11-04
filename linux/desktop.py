@@ -362,6 +362,20 @@ class PetWindow(QWidget):
             self.fit_next_frame = True
         self.permission = request
 
+    def leisure_block_reason(self):
+        if self.permission or self.permission_actors:
+            return '等待审批'
+        if self.store.work_tokens():
+            return '任务进行中'
+        selected = self.store.nodes.get(self.store.selected)
+        if selected and selected.active:
+            return 'Codex 已暂停' if self.store.paused(selected) else '任务进行中'
+        if selected and self.store.visual(selected, self.wall) == 'jump' and self.clock.position(selected.id, self.now):
+            return '完成庆祝中'
+        if self.transient or self.dragging or self.transition:
+            return '动画播放中'
+        return ''
+
     def resolve_visual(self):
         if self.dragging:
             self.position = 'left', self.animations['left'].frame(self.now-self.visual_epoch)
@@ -378,9 +392,8 @@ class PetWindow(QWidget):
             self.position = 'question', self.animations['question'].frame(self.now-self.permission_epoch, True)
             return
         selected = self.store.nodes.get(self.store.selected)
-        state = self.store.visual(selected, self.wall) if selected else 'idle'
         position = self.clock.position(selected.id, self.now) if selected else None
-        if self.store.work_tokens() or selected and (selected.active or state == 'jump' and position):
+        if self.leisure_block_reason():
             self.leisure.cancel()
         else:
             self.leisure.tick(self.now, not self.mouse_down and not self.hidden_edge)
@@ -666,8 +679,17 @@ class PetWindow(QWidget):
     def menu(self, position):
         menu = QMenu()
         responsive = menu.addAction('状态互动（Codex）')
-        rest = menu.addAction('休息模式')
-        rest.setEnabled(not bool(self.store.work_tokens()))
+        resting = self.leisure.phase in {'entering', 'sleeping'}
+        responsive.setCheckable(True)
+        responsive.setChecked(not resting)
+        responsive.setEnabled(resting)
+        responsive.setToolTip('跟随 Codex 的任务状态；已勾选时无需再次开启。')
+        blocked = self.leisure_block_reason()
+        rest = menu.addAction('休息模式'+('（'+blocked+'）' if blocked else ''))
+        rest.setCheckable(True)
+        rest.setChecked(resting)
+        rest.setEnabled(not blocked and not resting)
+        rest.setToolTip('空闲时立即入睡；新任务到来会自动唤醒。')
         appearance = menu.addAction('外观…')
         approvals = menu.addMenu('审批方式')
         approval_group = QActionGroup(menu)
@@ -704,7 +726,7 @@ class PetWindow(QWidget):
                 self.updater.check(manual=True)
             elif chosen == hooks:
                 QMessageBox.information(self, 'GooglePiggy', '在 Codex 设置 → Hooks 或 CLI /hooks 中检查并信任 GooglePiggy Linux。\n桌宠不会修改信任数据库；每项权限请求都由你单独决定。')
-            elif chosen == rest:
+            elif chosen == rest and not self.leisure_block_reason():
                 self.transient = None
                 self.leisure.enter(self.now)
             elif chosen == responsive:
