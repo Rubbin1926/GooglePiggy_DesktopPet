@@ -371,6 +371,27 @@ class QtTests(unittest.TestCase):
         self.assertFalse(w.dragging)
         self.assertNotEqual(w.anchor, before)
 
+    def test_qt_void_bindings_do_not_consume_none_references(self):
+        # Python 3.11 cannot tolerate a binding returning a borrowed Py_None.
+        # Short visual smoke tests miss the eventual none_dealloc process abort.
+        import gc
+        from PySide6.QtGui import QImage, QPainter
+        image = QImage(8, 8, QImage.Format.Format_RGBA8888)
+        source = QImage(8, 8, QImage.Format.Format_RGBA8888)
+        painter = QPainter(image)
+        try:
+            for _ in range(5):
+                painter.drawImage(0, 0, source)
+            gc.collect()
+            before = sys.getrefcount(None)
+            for _ in range(200):
+                painter.drawImage(0, 0, source)
+            gc.collect()
+            after = sys.getrefcount(None)
+            self.assertGreaterEqual(after-before, -2)
+        finally:
+            painter.end()
+
     def test_three_visible_children_and_independent_chat_clocks(self):
         self.dispatch('UserPromptSubmit')
         for i in range(5):
