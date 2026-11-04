@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 def main():
+    if sys.version_info < (3, 11):
+        raise SystemExit('桌宠需要独立 Python 3.11。请运行 ./setup-linux.sh，然后使用 ./start-linux.sh 启动。')
     parser = argparse.ArgumentParser(description='GooglePiggy · Ubuntu 桌面小猪')
     parser.add_argument('--hook', action='store_true')
     parser.add_argument('--install', action='store_true')
