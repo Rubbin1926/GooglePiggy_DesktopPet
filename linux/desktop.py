@@ -1,17 +1,14 @@
 """Qt/X11 desktop adapter; upstream state and animation modules remain unchanged."""
 import fcntl
-import json
-import math
 import os
 import queue
 import subprocess
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QUrl
+from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QFormLayout,
                               QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
@@ -691,6 +688,8 @@ class PetWindow(QWidget):
                 if manual or value:
                     self.notice = UpdateNotice(value, error)
                     self.fit_next_frame = True
+                    if self.hidden_edge and not self.hidden_family:
+                        self.reveal()
             elif self.notice:
                 if kind == 'progress':
                     self.notice.progress = value

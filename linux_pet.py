@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -43,7 +44,8 @@ def main():
             for frame in clip.frames.specs:
                 if not (resource_root()/frame['file']).is_file():
                     raise FileNotFoundError(frame['file'])
-        print(json.dumps({'animations': len(clips), 'frames': sum(len(c.frames) for c in clips.values()),
+        print(json.dumps({'python': sys.version.split()[0], 'frozen': bool(getattr(sys, 'frozen', False)),
+                          'animations': len(clips), 'frames': sum(len(c.frames) for c in clips.values()),
                           'source': 'unmodified upstream RGBA assets'}, ensure_ascii=False))
         return
     from linux.native import preload

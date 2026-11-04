@@ -285,6 +285,20 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual((backup/'googlepiggy').read_bytes(), b'old app')
             self.assertEqual((target/'googlepiggy').read_bytes(), b'new app')
 
+    def test_staging_failure_keeps_original_and_removes_partial_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = package(root/'installed', contents=b'old app')
+            candidate = package(root/'candidate')
+            def fail_copy(source, destination, **kwargs):
+                destination.mkdir()
+                (destination/'partial').write_bytes(b'x')
+                raise OSError('simulated disk full')
+            with patch('linux.update_helper.shutil.copytree', side_effect=fail_copy), self.assertRaises(OSError):
+                install_transaction(target, candidate, '0.5.9', lambda folder: None, lambda child, version: True, lambda child: None)
+            self.assertEqual((target/'googlepiggy').read_bytes(), b'old app')
+            self.assertEqual(list(root.glob('.googlepiggy-stage-*')), [])
+
 
 class QtTests(unittest.TestCase):
     @classmethod

@@ -17,9 +17,10 @@ for path in (root/'.native/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0',
     if path.is_file():
         native.append((str(path), '.'))
         break
-copyright = root/'.native/usr/share/doc/libxcb-cursor0/copyright'
-if copyright.is_file():
-    datas.append((str(copyright), 'licenses/xcb-cursor'))
+for copyright in (root/'.native/usr/share/doc/libxcb-cursor0/copyright', Path('/usr/share/doc/libxcb-cursor0/copyright')):
+    if copyright.is_file():
+        datas.append((str(copyright), 'licenses/xcb-cursor'))
+        break
 for bold in (False, True):
     path = font_file(bold)
     if path is None:

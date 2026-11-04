@@ -1,7 +1,6 @@
 """User-level launchers and additive Hook registration, with reversible backups."""
 import fcntl
 import json
-import os
 import shlex
 import shutil
 import sys
@@ -11,7 +10,7 @@ from pathlib import Path
 
 from codex_bridge import atomic_json
 from linux.hook import EVENTS
-from linux.paths import app_root, codex_home, config_dir, data_dir, read_json, state_dir
+from linux.paths import app_root, codex_home, config_dir, data_dir, state_dir
 
 MARKER = 'GooglePiggy Linux'
 DESKTOP_NAME = 'googlepiggy-linux.desktop'

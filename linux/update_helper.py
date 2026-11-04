@@ -21,10 +21,10 @@ def install_transaction(target, package, expected, launch, healthy, stop):
     suffix = time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8]
     stage = target.with_name('.googlepiggy-stage-'+suffix)
     backup = target.with_name(target.name+'.backup-'+suffix)
-    shutil.copytree(package, stage, symlinks=False)
-    validate_tree(stage, expected)
     child, moved_old = None, False
     try:
+        shutil.copytree(package, stage, symlinks=False)
+        validate_tree(stage, expected)
         os.replace(target, backup)
         moved_old = True
         os.replace(stage, target)

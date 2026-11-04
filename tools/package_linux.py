@@ -1,5 +1,4 @@
 """Stage portable launchers, licenses, update manifest and a reproducible file list."""
-import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -30,6 +29,8 @@ def main():
         shutil.copy2(root/name, folder/name)
     for script in folder.glob('*.sh'):
         script.chmod(0o755)
+    if (folder/'_internal/licenses').is_dir():
+        shutil.copytree(folder/'_internal/licenses', folder/'licenses', dirs_exist_ok=True)
     # Preserve the actual runtime license from the dedicated Python installation.
     python_license = Path(sys.base_prefix)/'lib/python3.11/LICENSE.txt'
     if python_license.is_file():
