@@ -6,6 +6,7 @@ import sys
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from codex_bridge import actor_path, atomic_json, publish_event
 from family_store import EVENT_STATUS
@@ -59,9 +60,54 @@ def event_payload(payload, event=None, status=None):
     return result
 
 
+def codex_reviewer(payload):
+    """Read only this turn's reviewer; unsupported metadata stays with Codex."""
+    if payload.get('permission_mode') in {'bypassPermissions', 'dontAsk'}:
+        return None
+    transcript, turn = payload.get('transcript_path'), payload.get('turn_id')
+    if not isinstance(transcript, str) or not isinstance(turn, str) or not turn:
+        return None
+    try:
+        path = Path(transcript)
+        if not path.is_absolute() or not path.is_file():
+            return None
+        with path.open('rb') as stream:
+            stream.seek(0, 2)
+            size, span = stream.tell(), 262144
+            while True:
+                offset = max(0, size-span)
+                stream.seek(offset)
+                lines = stream.read(size-offset).splitlines()
+                if offset:
+                    lines = lines[1:]
+                for line in reversed(lines):
+                    if b'"turn_context"' not in line[:200]:
+                        continue
+                    row = json.loads(line)
+                    if not isinstance(row, dict) or row.get('type') != 'turn_context':
+                        continue
+                    context = row.get('payload')
+                    if not isinstance(context, dict) or context.get('turn_id') != turn:
+                        return None
+                    policy = context.get('approval_policy')
+                    if policy != 'on-request' and not (isinstance(policy, dict) and isinstance(policy.get('granular'), dict)):
+                        return None
+                    reviewer = context.get('approvals_reviewer')
+                    return reviewer if isinstance(reviewer, str) and reviewer in {'user', 'auto_review'} else None
+                if not offset or span >= 16777216:
+                    return None
+                span *= 2
+    except (OSError, ValueError):
+        return None
+
+
 def request_permission(payload, directory, timeout=590):
     summary = permission_summary(payload)
     if not summary or not heartbeat_fresh(directory):
+        return {}
+    if codex_reviewer(payload) != 'user':
+        # No decision lets Codex apply auto-review, permissions and denials.
+        # Never replace "Approve for me" with a second human approval gate.
         return {}
     actor = payload.get('agent_id') or payload.get('session_id')
     current = read_json(actor_path(directory, actor)) if actor else {}

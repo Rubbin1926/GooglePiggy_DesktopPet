@@ -695,7 +695,7 @@ class PetWindow(QWidget):
         approval_group = QActionGroup(menu)
         approval_group.setExclusive(True)
         approval_choices = {}
-        for mode, label in [('pet', '小猪审批（默认）'), ('codex', 'Codex 原生审批，小猪提示跳转')]:
+        for mode, label in [('pet', '小猪人工审批（默认）'), ('codex', 'Codex 原生审批，小猪提示跳转')]:
             action = approvals.addAction(label)
             action.setCheckable(True)
             action.setChecked(self.approval_mode == mode)

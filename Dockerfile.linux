@@ -22,6 +22,10 @@ RUN QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
     tools.test_state_audit.StateAuditTests.test_compaction_session_restart_and_permission_do_not_swallow_stop \
     tools.test_state_audit.StateAuditTests.test_terminal_turn_rejects_late_permission_but_new_turn_accepts_it \
     tools.test_linux_port.HookTests.test_completed_or_replaced_turn_does_not_publish_permission -q \
+    && QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
+    tools.test_linux_port.HookTests.test_auto_review_delegates_without_pet_prompt_in_both_modes \
+    tools.test_linux_port.HookTests.test_unconfirmed_or_noninteractive_reviewer_uses_codex \
+    tools.test_linux_port.HookTests.test_latest_turn_context_wins_after_large_tool_output -q \
     && ./build-linux.sh
 RUN QT_QPA_PLATFORM=offscreen dist/GooglePiggy/googlepiggy \
     --state-dir /tmp/googlepiggy-build-smoke --no-observe --no-update-check --quit-after 2

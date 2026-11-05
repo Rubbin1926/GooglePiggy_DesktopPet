@@ -51,6 +51,13 @@ def package(root, number='0.5.9', contents=b'new app'):
     return root
 
 
+def approval_context(root, reviewer='user', turn='t', policy='on-request'):
+    path = root/'approval-context.jsonl'
+    path.write_text(json.dumps({'type':'turn_context','payload':{
+        'turn_id':turn,'approvals_reviewer':reviewer,'approval_policy':policy}})+'\n')
+    return str(path)
+
+
 class IntegrationTests(unittest.TestCase):
     def test_empty_xdg_variables_keep_standard_user_directories(self):
         from linux.paths import state_dir, config_dir, data_dir
@@ -101,6 +108,56 @@ class IntegrationTests(unittest.TestCase):
 
 
 class HookTests(unittest.TestCase):
+    def test_auto_review_delegates_without_pet_prompt_in_both_modes(self):
+        from codex_bridge import actor_path
+        for mode in ('pet','codex'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)
+                atomic_json(root/'settings.json',{'approvalMode':mode})
+                atomic_json(root/'pig-heartbeat.json',{'pid':os.getpid(),'updated_at':utc_now()})
+                handle({'hook_event_name':'PreToolUse','session_id':'A','turn_id':'t'},root)
+                before=actor_path(root,'A').read_bytes()
+                payload={'hook_event_name':'PermissionRequest','session_id':'A','turn_id':'t',
+                         'transcript_path':approval_context(root,'auto_review'),
+                         'tool_name':'Bash','tool_input':{'command':'example'}}
+                with patch('linux.hook.time.sleep',side_effect=AssertionError('Codex auto-review must not wait for the pet')):
+                    self.assertEqual(handle(payload,root),{})
+                self.assertEqual(actor_path(root,'A').read_bytes(),before)
+                self.assertFalse(list((root/'permission-requests').glob('*.json')))
+
+    def test_unconfirmed_or_noninteractive_reviewer_uses_codex(self):
+        cases=[('missing',None,'t','on-request',None),('unknown','unknown','t','on-request',None),
+               ('old-turn','user','old','on-request',None),('never','user','t','never',None),
+               ('full-access','user','t','on-request','bypassPermissions'),
+               ('no-ask','user','t','on-request','dontAsk')]
+        for ui_mode,label,reviewer,turn,policy,mode in [(ui,*case) for ui in ('pet','codex') for case in cases]:
+            with self.subTest(case=label,approval_mode=ui_mode), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp)
+                atomic_json(root/'settings.json',{'approvalMode':ui_mode})
+                atomic_json(root/'pig-heartbeat.json',{'pid':os.getpid(),'updated_at':utc_now()})
+                payload={'hook_event_name':'PermissionRequest','session_id':'A','turn_id':'t',
+                         'tool_name':'Bash','tool_input':{'command':'example'}}
+                if reviewer is not None:payload['transcript_path']=approval_context(root,reviewer,turn,policy)
+                if mode:payload['permission_mode']=mode
+                with patch('linux.hook.time.sleep',side_effect=AssertionError('Unconfirmed permissions must stay with Codex')):
+                    self.assertEqual(handle(payload,root),{})
+                self.assertFalse(list((root/'permission-requests').glob('*.json')))
+
+    def test_latest_turn_context_wins_after_large_tool_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            atomic_json(root/'pig-heartbeat.json',{'pid':os.getpid(),'updated_at':utc_now()})
+            path=Path(approval_context(root,'user'))
+            with path.open('a') as stream:
+                stream.write(json.dumps({'type':'turn_context','payload':{
+                    'turn_id':'t','approvals_reviewer':'auto_review','approval_policy':'on-request'}})+'\n')
+                stream.write(json.dumps({'type':'response_item','payload':{'output':'x'*300000}})+'\n')
+            payload={'hook_event_name':'PermissionRequest','session_id':'A','turn_id':'t',
+                     'transcript_path':str(path),'tool_name':'Bash','tool_input':{'command':'example'}}
+            with patch('linux.hook.time.sleep',side_effect=AssertionError('Newest reviewer must take precedence')):
+                self.assertEqual(handle(payload,root),{})
+            self.assertFalse(list((root/'permission-requests').glob('*.json')))
+
     def test_completed_or_replaced_turn_does_not_publish_permission(self):
         from codex_bridge import actor_path
         for event,turn in [('Stop','t'),('SessionEnd','t'),('UserPromptSubmit','new')]:
@@ -111,6 +168,7 @@ class HookTests(unittest.TestCase):
                 before=actor_path(root,'A').read_bytes()
                 with patch('linux.hook.time.sleep',side_effect=AssertionError('stale permission must not wait')):
                     result=handle({'hook_event_name':'PermissionRequest','session_id':'A','turn_id':'t',
+                                   'transcript_path':approval_context(root),
                                    'tool_name':'Bash','tool_input':{'command':'example'}},root)
                 self.assertEqual(result,{})
                 self.assertEqual(actor_path(root,'A').read_bytes(),before)
@@ -122,6 +180,7 @@ class HookTests(unittest.TestCase):
             atomic_json(root/'settings.json', {'approvalMode': 'codex'})
             atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
             payload = {'hook_event_name': 'PermissionRequest', 'session_id': 'A', 'turn_id': 't',
+                       'transcript_path': approval_context(root),
                        'tool_name': 'Bash', 'tool_input': {'command': 'example'}}
             with patch('linux.hook.time.sleep', side_effect=AssertionError('native approval must not wait')):
                 self.assertEqual(handle(payload, root), {})
@@ -170,13 +229,16 @@ class HookTests(unittest.TestCase):
             self.assertEqual(handle({'hook_event_name': 'PermissionRequest', 'session_id': 'A'}, root, .1), {})
 
     def test_permission_decisions_and_mismatched_response(self):
-        for decision in ('allow', 'deny', 'wrong-id'):
-            with self.subTest(decision=decision), tempfile.TemporaryDirectory() as tmp:
+        cases=[(decision,policy) for policy in ('on-request',{'granular':{'sandbox_approval':True,'rules':True}})
+               for decision in ('allow','deny','wrong-id')]
+        for decision,policy in cases:
+            with self.subTest(decision=decision,policy=policy), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
                 result = []
                 thread = threading.Thread(target=lambda: result.append(handle({'hook_event_name': 'PermissionRequest',
-                    'session_id': 'A', 'turn_id': 't', 'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, 2)))
+                    'session_id': 'A', 'turn_id': 't', 'transcript_path': approval_context(root,policy=policy),
+                    'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, 2)))
                 thread.start()
                 request = wait_for(lambda: list((root/'permission-requests').glob('*.request.json')))[0]
                 value = json.loads(request.read_text())
@@ -196,6 +258,7 @@ class HookTests(unittest.TestCase):
             root = Path(tmp)
             atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
             result = handle({'hook_event_name': 'PermissionRequest', 'session_id': 'A',
+                             'turn_id': 't', 'transcript_path': approval_context(root),
                              'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, .01)
             self.assertEqual(result, {})
             self.assertFalse(list((root/'permission-requests').glob('*.request.json')))
@@ -207,7 +270,8 @@ class HookTests(unittest.TestCase):
             atomic_json(root/'pig-heartbeat.json', {'pid': os.getpid(), 'updated_at': utc_now()})
             result = []
             thread = threading.Thread(target=lambda: result.append(handle({'hook_event_name': 'PermissionRequest',
-                'session_id': 'A', 'turn_id': 'old-turn', 'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, 2)))
+                'session_id': 'A', 'turn_id': 'old-turn', 'transcript_path': approval_context(root,turn='old-turn'),
+                'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, root, 2)))
             thread.start()
             request = wait_for(lambda: list((root/'permission-requests').glob('*.request.json')))[0]
             value = json.loads(request.read_text())
@@ -573,6 +637,7 @@ class QtTests(unittest.TestCase):
         w = self.window
         w.heartbeat(force=True)
         payload = {'hook_event_name': 'PermissionRequest', 'session_id': 'permission-test', 'turn_id': 't',
+                   'transcript_path': approval_context(self.root),
                    'tool_name': 'Bash', 'tool_input': {'command': '显示完整操作详情 '+('这是很长的中文路径与操作说明。'*80)}}
         proc = subprocess.Popen([sys.executable, str(ROOT/'linux_pet.py'), '--hook', '--state-dir', str(self.root)],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -619,6 +684,7 @@ class QtTests(unittest.TestCase):
         self.dispatch('UserPromptSubmit')
         w.heartbeat(force=True)
         handle({'hook_event_name': 'PermissionRequest', 'session_id': 'A', 'turn_id': 't',
+                'transcript_path': approval_context(self.root),
                 'tool_name': 'Bash', 'tool_input': {'command': 'example'}}, self.root)
         request = next((self.root/'permission-requests').glob('*.request.json'))
         value = json.loads(request.read_text());value['hook_pid'] = 99999999
