@@ -1,4 +1,4 @@
-"""Limit X11 mouse input to visible pixels without clipping antialiased artwork."""
+"""Ubuntu 22.04 / Python 3.10 X11 input masks; keep antialiased artwork unclipped."""
 import ctypes
 import ctypes.util
 import numpy as np

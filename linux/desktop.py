@@ -203,11 +203,6 @@ class HabitsDialog(QDialog):
             spin.valueChanged.connect(lambda value: self.edited())
             self.spins[key] = spin
             form.addRow(label, spin)
-        note = QLabel('所有聊天和子任务都结束后才计时，完成庆祝会先播完。\n'
-                      '被叫醒、点击、拖动或调整设置后，使用第二个时间。\n'
-                      '点击“保存”后生效；关闭会放弃未保存的改动。')
-        note.setWordWrap(True)
-        layout.addWidget(note)
         reset = QPushButton('恢复默认习性（5 秒 / 15 秒）')
         reset.setAutoDefault(False)
         reset.clicked.connect(self.reset)
