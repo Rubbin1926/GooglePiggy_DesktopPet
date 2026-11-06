@@ -108,20 +108,20 @@ class Renderer:
         left, bottom, width = 270, 425, 280
         top = bottom-(max(1, min(6, len(roots)))*34+12)
         self.selector_rect = (left, top, left+width, bottom)
-        bg = Image.new('RGBA', canvas.size)
+        bg = surface(self.selector_rect, pet.appearance.taskColor).copy()
         draw = ImageDraw.Draw(bg)
-        draw.rounded_rectangle(self.selector_rect, 12, fill=pet.appearance.color('taskColor', (220, 218, 222, 255)), outline=(245, 242, 245, 255))
         pet.selector_scroll = min(pet.selector_scroll, max(0, len(roots)-6))
         roots = roots[pet.selector_scroll:pet.selector_scroll+6]
         for i, node in enumerate(roots):
             if node.id and node.id == pet.store.selected:
-                draw.rounded_rectangle((left+6, top+6+i*34, left+width-6, top+40+i*34), 7, fill=(245, 240, 246, 235))
+                draw.rounded_rectangle((left+6, top+6+i*34, left+width-6, top+40+i*34), 10, fill=(245, 218, 226, 235))
         canvas.alpha_composite(opacity(bg, pet.appearance.taskOpacity))
         draw = ImageDraw.Draw(canvas)
         self.rows = []
-        ink = pet.appearance.color('taskTextColor', (78, 72, 80, 255))
+        ink = pet.appearance.color('taskTextColor', '#4a3b40')
+        face = font(15, True)
         if not roots:
-            draw.text((left+18, top+12), '当前好像没有任务唔～', font=font(14), fill=ink)
+            draw.text((left+18, top+12), '当前好像没有任务唔～', font=face, fill=ink)
         for i, node in enumerate(roots):
             rect = left+6, top+6+i*34, left+width-6, top+40+i*34
             if node.unread:
@@ -136,9 +136,9 @@ class Renderer:
                 if not node.active and pet.store.working(node, pet.wall):
                     status = '子任务运行中'
                 title = status+' · '+title
-            while title and draw.textlength(title, font=font(14)) > width-48:
+            while title and draw.textlength(title, font=face) > width-48:
                 title = title[:-2]+'…'
-            draw.text((left+28, rect[1]+7), title, font=font(14), fill=ink)
+            draw.text((left+28, rect[1]+7), title, font=face, fill=ink)
             if not preview:
                 self.rows.append((rect, node.id))
 
