@@ -108,22 +108,21 @@ class Renderer:
         left, bottom, width = 270, 425, 280
         top = bottom-(max(1, min(6, len(roots)))*34+12)
         self.selector_rect = (left, top, left+width, bottom)
-        bg = surface(self.selector_rect, pet.appearance.taskColor).copy()
-        draw = ImageDraw.Draw(bg)
         pet.selector_scroll = min(pet.selector_scroll, max(0, len(roots)-6))
         roots = roots[pet.selector_scroll:pet.selector_scroll+6]
-        for i, node in enumerate(roots):
-            if node.id and node.id == pet.store.selected:
-                draw.rounded_rectangle((left+6, top+6+i*34, left+width-6, top+40+i*34), 10, fill=(245, 218, 226, 235))
-        canvas.alpha_composite(opacity(bg, pet.appearance.taskOpacity))
+        canvas.alpha_composite(surface(self.selector_rect, pet.appearance.taskColor, pet.appearance.taskOpacity))
         draw = ImageDraw.Draw(canvas)
         self.rows = []
         ink = pet.appearance.color('taskTextColor', '#4a3b40')
-        face = font(15, True)
         if not roots:
-            draw.text((left+18, top+12), '当前好像没有任务唔～', font=face, fill=ink)
+            draw.text((left+18, top+12), '当前好像没有任务唔～', font=font(15), fill=ink)
         for i, node in enumerate(roots):
             rect = left+6, top+6+i*34, left+width-6, top+40+i*34
+            selected = bool(node.id and node.id == pet.store.selected) or preview and i == 0
+            face = font(15, len(roots) == 1 or selected)
+            if len(roots) > 1 and selected:
+                draw.rounded_rectangle((left+8, rect[1]+10, left+10, rect[1]+24), 1,
+                                       fill=pet.appearance.color('taskTextColor', '#b9798b'))
             if node.unread:
                 draw.ellipse((left+12, rect[1]+13, left+19, rect[1]+20), fill=(47, 137, 229, 255))
             title = node.title
