@@ -841,6 +841,33 @@ class QtTests(unittest.TestCase):
         w.appearance_dialog.close()
         self.assertFalse(w.preview_dialog or w.preview_task)
 
+    def test_pig_color_buttons_reset_only_their_own_group(self):
+        from appearance import Appearance
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        w=self.window
+        custom={'petScale':.8,'dialogScale':1.2,'taskScale':1.4,'dialogGap':17,'taskGap':23,
+                'dialogOpacity':.3,'buttonOpacity':.4,'taskOpacity':.5,
+                'dialogColor':'#123456','taskColor':'#654321','dialogTextColor':'#223344',
+                'buttonTextColor':'#334455','taskTextColor':'#445566'}
+        defaults=Appearance().values
+        groups={'dialog':{'dialogColor','dialogTextColor','buttonTextColor','dialogOpacity','buttonOpacity'},
+                'task':{'taskColor','taskTextColor','taskOpacity'}}
+        for group,keys in groups.items():
+            with self.subTest(group=group):
+                w.appearance.update(custom)
+                w.show_appearance()
+                QTest.mouseClick(w.appearance_dialog.pig_color_buttons[group],Qt.MouseButton.LeftButton)
+                for key,value in custom.items():
+                    self.assertEqual(w.appearance.values[key],defaults[key] if key in keys else value)
+                w.save_settings()
+                restored=Appearance(self.root/'appearance.json')
+                self.assertEqual(restored.values,w.appearance.values)
+                w.appearance_dialog.close()
+        w.show_appearance()
+        w.appearance_dialog.reset()
+        self.assertEqual(w.appearance.values,defaults)
+
     def test_long_permission_real_hook_requires_scroll_before_allow(self):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest

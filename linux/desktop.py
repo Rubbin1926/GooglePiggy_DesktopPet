@@ -99,6 +99,7 @@ class AppearanceDialog(QDialog):
     def __init__(self, pet):
         super().__init__(None, Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         self.pet, self.sliders, self.labels, self.colors = pet, {}, {}, {}
+        self.pig_color_buttons = {}
         self.setWindowTitle('猪猪桌宠 · 外观')
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.finished.connect(self.closed)
@@ -130,7 +131,19 @@ class AppearanceDialog(QDialog):
             button = QPushButton(pet.appearance.values[key] or '默认')
             button.clicked.connect(lambda checked=False, k=key: self.choose(k))
             self.colors[key] = button
-            form.addRow(label, button)
+            if key in {'dialogColor','taskColor'}:
+                group = 'dialog' if key == 'dialogColor' else 'task'
+                preset = QPushButton('对话框小猪色' if group == 'dialog' else '任务框小猪色')
+                preset.setAutoDefault(False)
+                preset.setToolTip('恢复该区域的小猪配色和透明度')
+                preset.clicked.connect(lambda checked=False, g=group: self.pig_colors(g))
+                self.pig_color_buttons[group] = preset
+                row = QHBoxLayout()
+                row.addWidget(button)
+                row.addWidget(preset)
+                form.addRow(label, row)
+            else:
+                form.addRow(label, button)
         for key, label in [('dialog', '在猪猪旁预览对话框'), ('task', '在猪猪旁预览任务栏')]:
             check = QCheckBox(label)
             check.toggled.connect(lambda value, k=key: self.preview(k, value))
@@ -165,14 +178,25 @@ class AppearanceDialog(QDialog):
         self.pet.fit_next_frame = True
 
     def reset(self):
-        self.pet.appearance.update(Appearance().values)
+        self.apply_defaults(self.pet.appearance.values)
+
+    def pig_colors(self, group):
+        keys = {'dialog': ('dialogColor','dialogTextColor','buttonTextColor','dialogOpacity','buttonOpacity'),
+                'task': ('taskColor','taskTextColor','taskOpacity')}[group]
+        self.apply_defaults(keys)
+
+    def apply_defaults(self, keys):
+        defaults = Appearance().values
+        self.pet.appearance.update({key: defaults[key] for key in keys})
         for key, slider in self.sliders.items():
-            slider.blockSignals(True)
-            slider.setValue(round(self.pet.appearance.values[key]*(1 if key.endswith('Gap') else 100)))
-            slider.blockSignals(False)
-            self.display(key)
-        for button in self.colors.values():
-            button.setText('默认')
+            if key in keys:
+                slider.blockSignals(True)
+                slider.setValue(round(self.pet.appearance.values[key]*(1 if key.endswith('Gap') else 100)))
+                slider.blockSignals(False)
+                self.display(key)
+        for key, button in self.colors.items():
+            if key in keys:
+                button.setText('默认')
         self.pet.appearance_changed()
 
     def closed(self):

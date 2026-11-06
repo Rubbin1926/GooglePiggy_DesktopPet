@@ -41,6 +41,9 @@ RUN QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
     tools.test_linux_port.QtTests.test_habits_save_error_does_not_claim_success \
     tools.test_linux_port.QtTests.test_global_sleep_waits_for_both_tasks_and_compaction \
     tools.test_linux_port.QtTests.test_sleep_waits_for_initial_observation_and_open_menus -q \
+    && QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
+    tools.test_linux_port.QtTests.test_pig_color_buttons_reset_only_their_own_group \
+    tools.test_linux_port.QtTests.test_task_list_keeps_chat_title_and_updates_status -q \
     && ./build-linux.sh
 RUN QT_QPA_PLATFORM=offscreen dist/GooglePiggy/googlepiggy \
     --state-dir /tmp/googlepiggy-build-smoke --no-observe --no-update-check --quit-after 2
