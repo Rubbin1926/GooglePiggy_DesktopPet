@@ -325,6 +325,35 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(image.getpixel((3, 3))[3], 128)
 
 
+class NativeWindowGeometryTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('GOOGLEPIGGY_NATIVE_GEOMETRY') == '1', 'Requires an actual X11 window manager')
+    def test_transparent_padding_can_extend_above_work_area(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication, QWidget
+        from linux.desktop import FLAGS
+        app = QApplication.instance() or QApplication([])
+        app.setQuitOnLastWindowClosed(False)
+        self.assertEqual(app.platformName(), 'xcb')
+        window = QWidget(None, FLAGS | Qt.WindowType.WindowTransparentForInput)
+        window.setWindowTitle('GooglePiggy geometry regression')
+        window.setWindowOpacity(0)
+        window.resize(448, 448)
+        try:
+            window.show()
+            QTest.qWait(250)
+            work = app.primaryScreen().availableGeometry()
+            target_x, target_y = work.left()+300, work.top()+8-234
+            window.move(target_x, target_y)
+            QTest.qWait(350)
+            self.assertEqual(window.x(), target_x)
+            self.assertEqual(window.y(), target_y)
+        finally:
+            window.close()
+            window.deleteLater()
+            app.processEvents()
+
+
 class UpdateTests(unittest.TestCase):
     def test_only_verified_linux_channel_is_selected(self):
         number, tag = '0.5.10', 'v0.5.10-linux'
@@ -760,6 +789,59 @@ class QtTests(unittest.TestCase):
                 finally:
                     window.quit()
                     window.deleteLater()
+
+    def test_visible_pet_reaches_work_area_corners_at_different_sizes(self):
+        from PySide6.QtCore import QPoint
+        w = self.window
+        layouts = [Screen((0,0,width,height),(0,27,width,height-70))
+                   for width,height in ((1280,720),(1920,1080),(2560,1440))]
+        layouts.append(Screen((-1920,0,0,1080),(-1850,27,0,1080)))
+        for screen in layouts:
+            for scale in (.5,1,2):
+                with self.subTest(work=screen.work,scale=scale), patch.object(w,'screens',return_value=[screen]):
+                    w.appearance.update({'petScale':scale})
+                    w.position = ('idle',0)
+                    w.last_pil = w.renderer.compose(w)
+                    for right,bottom in ((False,False),(True,False),(False,True),(True,True)):
+                        w.anchor = QPoint(screen.work[2]+10000 if right else screen.work[0]-10000,
+                                          screen.work[3]+10000 if bottom else screen.work[1]-10000)
+                        w.fit_visible()
+                        bounds = w.visible_global()
+                        self.assertAlmostEqual(bounds[2] if right else bounds[0],screen.work[2]-8 if right else screen.work[0]+8,delta=1)
+                        self.assertAlmostEqual(bounds[3] if bottom else bounds[1],screen.work[3]-8 if bottom else screen.work[1]+8,delta=1)
+
+    def test_work_area_change_refits_visible_pet_and_hidden_tail(self):
+        from PySide6.QtCore import QPoint
+        w = self.window
+        large = Screen((0,0,2560,1440),(0,27,2560,1370))
+        small = Screen((0,0,1280,720),(70,27,1280,720))
+        with patch.object(w,'screens',return_value=[large]):
+            w.poll()
+            w.anchor = QPoint(2400,1300)
+            w.fit_next_frame = False
+        with patch.object(w,'screens',return_value=[small]):
+            w.poll()
+            self.assertTrue(w.fit_next_frame)
+            w.tick()
+            bounds = w.visible_global()
+            self.assertGreaterEqual(bounds[0],small.work[0]+7)
+            self.assertGreaterEqual(bounds[1],small.work[1]+7)
+            self.assertLessEqual(bounds[2],small.work[2]-7)
+            self.assertLessEqual(bounds[3],small.work[3]-7)
+        with patch.object(w,'screens',return_value=[large]):
+            w.poll()
+            w.anchor = QPoint(410-w.renderer.pet_bounds[0],1200)
+            self.assertTrue(w.hide_at_edge())
+            w.now += .6
+            w.advance_transition()
+            self.assertTrue(w.hidden)
+        with patch.object(w,'screens',return_value=[small]):
+            w.poll()
+            self.assertTrue(w.hidden)
+            self.assertEqual(w.hidden_screen,small)
+            home = translate(w.renderer.pet_bounds,w.home_anchor.x()-410,w.home_anchor.y()-570)
+            self.assertGreaterEqual(home[0],small.work[0]+7)
+            self.assertLessEqual(home[3],small.work[3]-7)
 
 
 if __name__ == '__main__':

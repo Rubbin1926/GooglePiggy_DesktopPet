@@ -28,7 +28,10 @@ from linux.render import Renderer, resize
 from linux.update import Updater
 from linux.x11 import InputShape
 
-FLAGS = Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus
+# GNOME otherwise clamps the transparent canvas, keeping the visible pet far
+# from desktop edges. The adapter positions visible content in the work area.
+FLAGS = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint |
+         Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.X11BypassWindowManagerHint)
 
 
 def screen_rect(rect):
@@ -222,6 +225,7 @@ class PetWindow(QWidget):
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.setInterval(20)
         self.timer.timeout.connect(self.tick)
+        self.screen_layout = tuple(self.screens())
         self._load_position()
         self.tick()
         self.show()
@@ -285,6 +289,15 @@ class PetWindow(QWidget):
         return bool(self.permission or self.store.work_tokens()-self.hidden_tokens)
 
     def poll(self):
+        screens = tuple(self.screens())
+        if screens != self.screen_layout:
+            self.screen_layout = screens
+            self.fit_next_frame = True
+            if self.hidden_edge:
+                home = translate(self.renderer.pet_bounds, self.home_anchor.x()-410, self.home_anchor.y()-570)
+                self.hidden_screen = max(screens, key=lambda s: intersection(home, s.work))
+                dx, dy = fit_delta(home, self.hidden_screen.work)
+                self.home_anchor += QPoint(round(dx), round(dy))
         self.observer.poll()
         pinned = self.hidden_family or self.reveal_completion
         if self.celebration_family:
