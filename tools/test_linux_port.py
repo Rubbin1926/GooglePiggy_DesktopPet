@@ -596,7 +596,7 @@ class QtTests(unittest.TestCase):
         self.assertEqual(w.leisure.delays,(9,28))
         self.assertIn('已保存并生效',dialog.status.text())
         dialog.spins['wakeAwakeSeconds'].setValue(99)
-        dialog.close()
+        QTest.keyClick(dialog,Qt.Key.Key_Escape)
         self.assertIsNone(w.habits_dialog)
         self.assertEqual(w.leisure.delays,(9,28))
         reopened=PetWindow(self.args,self.root)
@@ -658,6 +658,15 @@ class QtTests(unittest.TestCase):
         w.menu_open=False
         w.resolve_visual()
         self.assertEqual(w.position[0],'sleep_entry')
+
+    def test_escape_from_appearance_does_not_keep_sleep_blocked(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        w=self.window
+        w.show_appearance()
+        QTest.keyClick(w.appearance_dialog,Qt.Key.Key_Escape)
+        self.assertIsNone(w.appearance_dialog)
+        self.assertFalse(w.preview_dialog or w.preview_task)
 
     def test_rest_menu_enters_sleep_and_codex_work_wakes_it(self):
         w = self.window

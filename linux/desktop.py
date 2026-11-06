@@ -101,6 +101,7 @@ class AppearanceDialog(QDialog):
         self.pet, self.sliders, self.labels, self.colors = pet, {}, {}, {}
         self.setWindowTitle('猪猪桌宠 · 外观')
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.finished.connect(self.closed)
         layout = QVBoxLayout(self)
         title = QLabel('调整外观')
         title.setStyleSheet('font-size:20px; font-weight:600; margin:6px')
@@ -174,12 +175,11 @@ class AppearanceDialog(QDialog):
             button.setText('默认')
         self.pet.appearance_changed()
 
-    def closeEvent(self, event):
+    def closed(self):
         self.pet.preview_dialog = self.pet.preview_task = False
         self.pet.appearance_dialog = None
         self.pet.leisure.wake(self.pet.now)
         self.pet.dirty = True
-        super().closeEvent(event)
 
 
 class HabitsDialog(QDialog):
@@ -188,6 +188,7 @@ class HabitsDialog(QDialog):
         self.pet, self.spins = pet, {}
         self.setWindowTitle('猪猪桌宠 · 小猪习性')
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.finished.connect(self.closed)
         layout = QVBoxLayout(self)
         title = QLabel('忙时认真，闲时贪睡')
         title.setStyleSheet('font-size:20px; font-weight:600; margin:6px')
@@ -250,11 +251,10 @@ class HabitsDialog(QDialog):
             spin.blockSignals(False)
         self.edited()
 
-    def closeEvent(self, event):
+    def closed(self):
         self.pet.habits_dialog = None
         self.pet.leisure.wake(self.pet.now)
         self.pet.dirty = True
-        super().closeEvent(event)
 
 
 class PetWindow(QWidget):
