@@ -130,7 +130,7 @@ class Renderer:
             if not preview:
                 status = '等待审批' if node.id in pet.permission_actors else {
                     'thinking': '思考中', 'working': '执行中', 'compacting': '整理上下文',
-                    'permission': '等待审批', 'interrupted': '已暂停', 'success': '已完成',
+                    'permission': '等待审批', 'interrupted': '已中断', 'success': '已完成',
                     'error': '出错', 'idle': '空闲',
                 }.get(node.status, '空闲')
                 if not node.active and pet.store.working(node, pet.wall):

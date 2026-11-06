@@ -161,7 +161,7 @@ class HookTests(unittest.TestCase):
 
     def test_completed_or_replaced_turn_does_not_publish_permission(self):
         from codex_bridge import actor_path
-        for event,turn in [('Stop','t'),('SessionEnd','t'),('UserPromptSubmit','new')]:
+        for event,turn in [('Stop','t'),('SessionEnd','t'),('Interrupt','t'),('UserPromptSubmit','new')]:
             with self.subTest(event=event), tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp)
                 atomic_json(root/'pig-heartbeat.json', {'pid':os.getpid(),'updated_at':utc_now()})
@@ -570,6 +570,94 @@ class QtTests(unittest.TestCase):
         self.window.now += 3
         self.window.resolve_visual()
         self.assertTrue(next(value[0] for label, value in self.menu_state().items() if label.startswith('休息模式')))
+
+    def test_habits_dialog_saves_delays_and_preserves_other_settings(self):
+        from linux.desktop import PetWindow
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        atomic_json(self.root/'settings.json',{'approvalMode':'codex','keep':'user value'})
+        w=self.window
+        labels=self.menu_state()
+        for label in ('外观…','小猪习性…','检查更新…'):
+            self.assertIn(label,labels)
+        w.show_habits()
+        dialog=w.habits_dialog
+        self.assertEqual(dialog.spins['idleSleepSeconds'].value(),5)
+        self.assertEqual(dialog.spins['wakeAwakeSeconds'].value(),15)
+        dialog.spins['idleSleepSeconds'].setValue(9)
+        dialog.spins['wakeAwakeSeconds'].setValue(28)
+        self.assertEqual(w.leisure.delays,(5,15))
+        self.assertNotIn('idleSleepSeconds',json.loads((self.root/'settings.json').read_text()))
+        self.assertIn('尚未保存',dialog.status.text())
+        QTest.mouseClick(dialog.save_button,Qt.MouseButton.LeftButton)
+        settings=json.loads((self.root/'settings.json').read_text())
+        self.assertEqual(settings['approvalMode'],'codex')
+        self.assertEqual(settings['keep'],'user value')
+        self.assertEqual(w.leisure.delays,(9,28))
+        self.assertIn('已保存并生效',dialog.status.text())
+        dialog.spins['wakeAwakeSeconds'].setValue(99)
+        dialog.close()
+        self.assertIsNone(w.habits_dialog)
+        self.assertEqual(w.leisure.delays,(9,28))
+        reopened=PetWindow(self.args,self.root)
+        reopened.timer.stop()
+        try:
+            self.assertEqual(reopened.leisure.delays,(9,28))
+            reopened.show_habits()
+            reopened.habits_dialog.reset()
+            self.assertEqual(reopened.leisure.delays,(9,28))
+            QTest.mouseClick(reopened.habits_dialog.save_button,Qt.MouseButton.LeftButton)
+            self.assertEqual(reopened.leisure.delays,(5,15))
+        finally:
+            reopened.quit();reopened.deleteLater()
+
+    def test_habits_save_error_does_not_claim_success(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        w=self.window
+        w.show_habits()
+        w.habits_dialog.spins['idleSleepSeconds'].setValue(30)
+        with patch('linux.desktop.atomic_json',side_effect=OSError('disk full')), \
+             patch('linux.desktop.QMessageBox.warning'):
+            QTest.mouseClick(w.habits_dialog.save_button,Qt.MouseButton.LeftButton)
+        self.assertEqual(w.leisure.delays,(5,15))
+        self.assertIn('保存失败',w.habits_dialog.status.text())
+
+    def test_global_sleep_waits_for_both_tasks_and_compaction(self):
+        w=self.window
+        self.dispatch('UserPromptSubmit','A')
+        self.dispatch('UserPromptSubmit','B')
+        self.dispatch('Stop','A')
+        self.dispatch('PreCompact','B')
+        self.assertTrue(w.position[0].startswith('packing_'))
+        self.dispatch('PostCompact','B')
+        w.now += 10000
+        w.resolve_visual()
+        self.assertEqual(w.leisure.phase,'awake')
+        self.assertEqual(w.position[0],'reading')
+        self.dispatch('Stop','B')
+        deadline=w.leisure.deadline
+        w.now=deadline-.01;w.resolve_visual()
+        self.assertEqual(w.leisure.phase,'awake')
+        w.now=deadline;w.resolve_visual()
+        self.assertEqual(w.position[0],'sleep_entry')
+
+    def test_sleep_waits_for_initial_observation_and_open_menus(self):
+        w=self.window
+        w.observer.ready=False
+        w.now += 10000
+        w.resolve_visual()
+        self.assertEqual(w.leisure.phase,'awake')
+        self.assertIsNone(w.leisure.deadline)
+        w.observer.ready=True
+        w.resolve_visual()
+        deadline=w.leisure.deadline
+        w.menu_open=True
+        w.now=deadline+1;w.resolve_visual()
+        self.assertEqual(w.leisure.phase,'awake')
+        w.menu_open=False
+        w.resolve_visual()
+        self.assertEqual(w.position[0],'sleep_entry')
 
     def test_rest_menu_enters_sleep_and_codex_work_wakes_it(self):
         w = self.window

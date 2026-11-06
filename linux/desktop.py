@@ -1,4 +1,4 @@
-"""Qt/X11 desktop adapter; upstream state and animation modules remain unchanged."""
+"""Qt/X11 desktop adapter using shared task and animation modules."""
 import fcntl
 import os
 import queue
@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QColor, QCursor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QFormLayout,
-                              QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
+                              QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from animation_clock import AnimationClock, load_manifest
 from appearance import Appearance, COLORS, RANGES
@@ -24,7 +24,7 @@ from linux import VERSION
 from linux.dock import DockSettings
 from linux.geometry import Screen, fit_delta, inside, intersection, tail_rects, tail_safe_screen, touched_edge, translate, union
 from linux.integration import autostart_enabled, set_autostart
-from linux.paths import app_root, approval_mode, font_file, pid_alive, read_json, resource_root, state_dir, utc_now
+from linux.paths import HABIT_DEFAULTS, HABIT_LIMITS, app_root, approval_mode, font_file, habits_settings, pid_alive, read_json, resource_root, state_dir, utc_now
 from linux.render import Renderer, resize
 from linux.update import Updater
 from linux.x11 import InputShape
@@ -177,6 +177,82 @@ class AppearanceDialog(QDialog):
     def closeEvent(self, event):
         self.pet.preview_dialog = self.pet.preview_task = False
         self.pet.appearance_dialog = None
+        self.pet.leisure.wake(self.pet.now)
+        self.pet.dirty = True
+        super().closeEvent(event)
+
+
+class HabitsDialog(QDialog):
+    def __init__(self, pet):
+        super().__init__(None, Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        self.pet, self.spins = pet, {}
+        self.setWindowTitle('猪猪桌宠 · 小猪习性')
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        layout = QVBoxLayout(self)
+        title = QLabel('忙时认真，闲时贪睡')
+        title.setStyleSheet('font-size:20px; font-weight:600; margin:6px')
+        layout.addWidget(title)
+        form = QFormLayout()
+        layout.addLayout(form)
+        for key, label in [('idleSleepSeconds', '忙完后多久开睡'), ('wakeAwakeSeconds', '被叫醒后精神多久')]:
+            spin = QSpinBox()
+            spin.setRange(*HABIT_LIMITS)
+            spin.setSuffix(' 秒')
+            spin.setValue(pet.habits[key])
+            spin.valueChanged.connect(lambda value: self.edited())
+            self.spins[key] = spin
+            form.addRow(label, spin)
+        note = QLabel('所有聊天和子任务都结束后才计时，完成庆祝会先播完。\n'
+                      '被叫醒、点击、拖动或调整设置后，使用第二个时间。\n'
+                      '点击“保存”后生效；关闭会放弃未保存的改动。')
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        reset = QPushButton('恢复默认习性（5 秒 / 15 秒）')
+        reset.setAutoDefault(False)
+        reset.clicked.connect(self.reset)
+        layout.addWidget(reset)
+        self.status = QLabel('调整后请点击“保存”。')
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.save_button = QPushButton('保存')
+        self.save_button.setDefault(True)
+        self.save_button.clicked.connect(self.save)
+        layout.addWidget(self.save_button)
+        close = QPushButton('关闭')
+        close.setAutoDefault(False)
+        close.clicked.connect(self.close)
+        layout.addWidget(close)
+        self.setMinimumWidth(440)
+
+    def edited(self):
+        self.status.setText('尚未保存；实际运行仍使用之前的设置。')
+        self.status.setStyleSheet('color:#8d681e')
+
+    def save(self):
+        for spin in self.spins.values():
+            spin.interpretText()
+        changes = {key: spin.value() for key, spin in self.spins.items()}
+        try:
+            self.pet.set_habits(changes)
+        except OSError as error:
+            self.status.setText('保存失败，原运行设置仍然有效。')
+            self.status.setStyleSheet('color:#a83b3b')
+            QMessageBox.warning(self, '小猪习性', str(error))
+            return
+        self.status.setText('已保存并生效：忙完后 '+str(self.pet.habits['idleSleepSeconds'])+
+                            ' 秒开睡，叫醒后清醒 '+str(self.pet.habits['wakeAwakeSeconds'])+' 秒。')
+        self.status.setStyleSheet('color:#34734a')
+
+    def reset(self):
+        for key, spin in self.spins.items():
+            spin.blockSignals(True)
+            spin.setValue(HABIT_DEFAULTS[key])
+            spin.blockSignals(False)
+        self.edited()
+
+    def closeEvent(self, event):
+        self.pet.habits_dialog = None
+        self.pet.leisure.wake(self.pet.now)
         self.pet.dirty = True
         super().closeEvent(event)
 
@@ -197,7 +273,8 @@ class PetWindow(QWidget):
             self.observer.enable_background()
         self.clock = AnimationClock(self.animations)
         self.now, self.wall = time.monotonic(), time.time()
-        self.leisure = Leisure(self.now)
+        self.habits = habits_settings(directory)
+        self.leisure = Leisure(self.now, delays=(self.habits['idleSleepSeconds'], self.habits['wakeAwakeSeconds']))
         self.appearance = Appearance(directory/'appearance.json')
         self.approval_mode = approval_mode(directory)
         self.renderer = Renderer(resource_root(), self.animations)
@@ -226,6 +303,8 @@ class PetWindow(QWidget):
         self.permission_page, self.permission_epoch = 0, self.now
         self.preview_dialog = self.preview_task = False
         self.appearance_dialog = None
+        self.habits_dialog = None
+        self.menu_open = False
         self.notice, self.update_package = None, None
         self.updater = Updater(VERSION, directory/'updates')
         self.image, self.last_pil = QImage(), None
@@ -278,11 +357,32 @@ class PetWindow(QWidget):
             self.tail.refresh()
 
     def show_appearance(self):
+        self.leisure.wake(self.now)
         if self.appearance_dialog is None:
             self.appearance_dialog = AppearanceDialog(self)
         self.appearance_dialog.show()
         self.appearance_dialog.raise_()
         self.appearance_dialog.activateWindow()
+
+    def show_habits(self):
+        self.leisure.wake(self.now)
+        if self.habits_dialog is None:
+            self.habits_dialog = HabitsDialog(self)
+        self.habits_dialog.show()
+        self.habits_dialog.raise_()
+        self.habits_dialog.activateWindow()
+
+    def set_habits(self, changes):
+        values = read_json(self.directory/'settings.json')
+        values = values if isinstance(values, dict) else {}
+        values.update({key: changes[key] for key in HABIT_DEFAULTS if key in changes})
+        atomic_json(self.directory/'settings.json', values)
+        stored = read_json(self.directory/'settings.json')
+        if not isinstance(stored, dict) or any(type(stored.get(key)) is not int or stored[key] != values[key] for key in HABIT_DEFAULTS):
+            raise OSError('未能确认设置保存成功，请重试。')
+        self.habits = {key: stored[key] for key in HABIT_DEFAULTS}
+        self.leisure.set_delays((self.habits['idleSleepSeconds'], self.habits['wakeAwakeSeconds']), self.now)
+        self.dirty = True
 
     def belongs_to_hidden(self, node):
         seen = set()
@@ -326,7 +426,6 @@ class PetWindow(QWidget):
             self.store.select(pinned)
         tokens = self.store.work_tokens()
         if tokens-self.known_work:
-            self.leisure.reset(self.now)
             if not self.dragging and not self.transition:
                 self.transient = None
         self.known_work |= tokens
@@ -396,16 +495,25 @@ class PetWindow(QWidget):
             return '等待审批'
         if self.store.work_tokens():
             return '任务进行中'
+        if not self.observer.ready:
+            return '正在确认任务状态'
         selected = self.store.nodes.get(self.store.selected)
-        if selected and selected.active:
-            return 'Codex 已暂停' if self.store.paused(selected) else '任务进行中'
+        if selected and selected.status == 'interrupted':
+            track = self.clock.tracks.get(selected.id)
+            if track and self.now-track.epoch < self.animations['question'].total_duration/1000:
+                return '任务已中断'
+        if self.store.pending_work():
+            return '任务进行中'
         if selected and self.store.visual(selected, self.wall) == 'jump' and self.clock.position(selected.id, self.now):
             return '完成庆祝中'
         if self.transient or self.dragging or self.transition:
             return '动画播放中'
+        if self.habits_dialog is not None or self.appearance_dialog is not None:
+            return '正在调整设置'
         return ''
 
     def resolve_visual(self):
+        self.leisure.set_busy(not self.observer.ready or self.store.pending_work() or bool(self.permission_actors), self.now)
         if self.dragging:
             self.position = 'left', self.animations['left'].frame(self.now-self.visual_epoch)
             return
@@ -425,7 +533,8 @@ class PetWindow(QWidget):
         if self.leisure_block_reason():
             self.leisure.cancel()
         else:
-            self.leisure.tick(self.now, not self.mouse_down and not self.hidden_edge)
+            self.leisure.tick(self.now, not self.mouse_down and not self.hidden_edge and not self.menu_open,
+                              self.animations['snack'].total_duration/1000)
             position = self.leisure.position(self.animations, self.now)
         self.position = position or ('idle', self.animations['idle'].frame(self.now-self.idle_epoch))
 
@@ -506,6 +615,8 @@ class PetWindow(QWidget):
         if not self.hidden_edge or self.transition and self.transition[0] == 'reveal':
             return
         actor = self.hidden_family if completed else ''
+        if not completed:
+            self.leisure.wake(self.now)
         self.reveal_completion = actor
         self.hidden_family = ''
         self.hidden = False
@@ -604,7 +715,7 @@ class PetWindow(QWidget):
             self.dragging = True
             self.visual_epoch = self.now
             if self.leisure.phase == 'sleeping':
-                self.leisure.reset(self.now)
+                self.leisure.wake(self.now)
             else:
                 self.leisure.cancel()
         if self.dragging:
@@ -636,10 +747,11 @@ class PetWindow(QWidget):
             self.dragging = False
             self.transient = None
             if not self.hide_at_edge():
+                self.leisure.wake(self.now)
                 self.fit_next_frame = True
                 self.save_timer.start(250)
-        elif not self.leisure.click(self.now) and not self.store.work_tokens() and not self.permission:
-            self.leisure.cancel()
+        elif not self.leisure.click(self.now) and not self.store.pending_work() and not self.permission:
+            self.leisure.wake(self.now)
             self.transient, self.visual_epoch = ('flat', True), self.now
         self.dirty = True
 
@@ -720,6 +832,7 @@ class PetWindow(QWidget):
         rest.setEnabled(not blocked and not resting)
         rest.setToolTip('空闲时立即入睡；新任务到来会自动唤醒。')
         appearance = menu.addAction('外观…')
+        habits = menu.addAction('小猪习性…')
         approvals = menu.addMenu('审批方式')
         approval_group = QActionGroup(menu)
         approval_group.setExclusive(True)
@@ -741,12 +854,20 @@ class PetWindow(QWidget):
             autostart = menu.addAction('自启动状态未确认')
         hooks = menu.addAction('Codex Hook 首次授权说明')
         exit_action = menu.addAction('退出猪猪桌宠')
-        chosen = menu.exec(position)
+        self.menu_open = True
+        try:
+            chosen = menu.exec(position)
+        finally:
+            self.menu_open = False
+        if self.leisure.phase in {'awake','snacking'}:
+            self.leisure.wake(self.now)
         try:
             if chosen == exit_action:
                 self.quit()
             elif chosen == appearance:
                 self.show_appearance()
+            elif chosen == habits:
+                self.show_habits()
             elif chosen in approval_choices:
                 self.set_approval_mode(approval_choices[chosen])
             elif chosen == autostart:
@@ -759,7 +880,7 @@ class PetWindow(QWidget):
                 self.transient = None
                 self.leisure.enter(self.now)
             elif chosen == responsive:
-                self.leisure.reset(self.now)
+                self.leisure.wake(self.now)
                 self.transient = None
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, 'GooglePiggy', str(error))
@@ -844,6 +965,7 @@ class PetWindow(QWidget):
                  'appearance': self.appearance.values, 'appearance_preview': {'dialog': self.preview_dialog, 'task': self.preview_task},
                  'permission_request_id': self.permission['request_id'] if self.permission else '', 'frames_rendered': self.frames_rendered,
                  'approval_mode': self.approval_mode,
+                 'habits': self.habits, 'sleep_blocked_by_work': self.leisure.busy,
                  'update_phase': self.notice.phase if self.notice else None, 'unread_sync': self.observer.unread_supported}
         atomic_json(self.directory/'pig-heartbeat.json', value)
 
@@ -858,6 +980,8 @@ class PetWindow(QWidget):
         self.updater.cancel.set()
         if self.appearance_dialog:
             self.appearance_dialog.close()
+        if self.habits_dialog:
+            self.habits_dialog.close()
         self.tail.close()
         self.input_shape.close()
         self.close()

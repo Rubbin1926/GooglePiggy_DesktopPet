@@ -73,9 +73,9 @@ def main():
         passed.append('Frozen observer filters safety check but retains same text in a project')
         for event in ('PreCompact','PostCompact'):
             publish_event(state,dict(session_id='root',event=event,turn_id='new'))
-            wait(lambda h:node(h,'root').get('status')==('compacting' if event=='PreCompact' else 'success'))
+            wait(lambda h:node(h,'root').get('status')==('compacting' if event=='PreCompact' else 'thinking'))
         publish_event(state,dict(session_id='root',event='PostToolUse',turn_id='new'))
-        time.sleep(1.2);assert node(read(),'root')['status']=='success'
+        time.sleep(1.2);assert node(read(),'root')['status']=='thinking'
         publish_event(state,dict(session_id='root',event='PreToolUse',turn_id='new'))
         wait(lambda h:node(h,'root').get('status')=='working')
         passed.append('Only a fresh tool start resumes after compaction; delayed result cannot')

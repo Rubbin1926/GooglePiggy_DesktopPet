@@ -5,6 +5,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+HABIT_DEFAULTS = {'idleSleepSeconds': 5, 'wakeAwakeSeconds': 15}
+HABIT_LIMITS = (1, 3600)
+
 
 def app_root():
     return Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
@@ -51,6 +54,13 @@ def read_json(path):
 def approval_mode(directory=None):
     value = read_json(Path(directory or state_dir())/'settings.json')
     return 'codex' if isinstance(value, dict) and value.get('approvalMode') == 'codex' else 'pet'
+
+
+def habits_settings(directory=None):
+    values = read_json(Path(directory or state_dir())/'settings.json')
+    values = values if isinstance(values, dict) else {}
+    return {key: min(HABIT_LIMITS[1], max(HABIT_LIMITS[0], values[key]))
+            if type(values.get(key)) is int else default for key, default in HABIT_DEFAULTS.items()}
 
 
 def utc_now():

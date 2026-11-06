@@ -5,7 +5,7 @@ ACTIVE = {'thinking','working','compacting','permission','interrupted'}
 BEGINS = {'UserPromptSubmit','SubagentStart','PreCompact','ResumeDetected'}
 EVENT_STATUS = {'SessionStart':'idle','UserPromptSubmit':'thinking','PreToolUse':'working',
     'PostToolUse':'working','Stop':'success','TaskCompleteFallback':'success','Interrupt':'interrupted',
-    'PreCompact':'compacting','PostCompact':'success','SubagentStart':'working',
+    'PreCompact':'compacting','PostCompact':'thinking','SubagentStart':'working',
     'SubagentStop':'success','SessionEnd':'idle','PermissionRequest':'permission'}
 
 
@@ -29,6 +29,7 @@ class Node:
     observation_expired: bool = False
     turn_started: float = 0
     completion_event: str = ''
+    compaction_resume: bool = True
 
 
 class FamilyStore:
@@ -62,6 +63,9 @@ class FamilyStore:
                 node.observation_expired = False
             else:
                 return False
+        if event == 'PreCompact':
+            node.compaction_resume = (node.status != 'interrupted' and (node.active or
+                bool(node.turn_started and node.completion is None))) or bool(turn and turn != node.turn)
         if begins and turn and turn != node.turn:
             if node.turn:
                 node.retired.add(node.turn)
@@ -74,15 +78,12 @@ class FamilyStore:
             node.turn = turn
         if event == 'SessionStart' and node.active:
             return False
-        if node.status == 'interrupted' and event not in BEGINS | {'PermissionRequest','SessionEnd'}:
+        if node.status == 'interrupted' and event not in BEGINS | {'SessionEnd'}:
             return False
-        if (event in {'PreToolUse','PermissionRequest','Stop','TaskCompleteFallback'} and node.completion_event == 'PostCompact' and
-            now > node.last_event):
-            # SessionStart may refresh payload after compaction. Retain its
-            # completion kind until fresh work/approval or the real turn end;
-            # a late tool result alone cannot resume the turn.
-            node.completion = None
-            node.completion_event = ''
+        if event == 'PostToolUse' and node.payload.get('event') == 'PostCompact':
+            return False  # A late tool result does not end compaction's thinking state.
+        if node.completion_event == 'PostCompact' and event in {'PreToolUse','PermissionRequest','Stop','TaskCompleteFallback'}:
+            node.completion, node.completion_event = None, ''
         if node.completion is not None and not begins and event in {'PreToolUse','PostToolUse','Stop','SubagentStop','TaskCompleteFallback',
                                                                    'PermissionRequest','PermissionDecision','PermissionNoDecision'}:
             return False
@@ -90,12 +91,14 @@ class FamilyStore:
             return False
         if event == 'PostCompact' and node.status != 'compacting':
             return False
-        status = p.get('status') or EVENT_STATUS.get(event,'idle')
+        status = ('thinking' if node.compaction_resume else 'success') if event == 'PostCompact' else p.get('status') or EVENT_STATUS.get(event,'idle')
+        if not node.turn_started and (begins or event in {'PreToolUse','PostToolUse','PermissionRequest'}):
+            node.turn_started = now
         if status != node.status or begins:
             node.changed = now
         node.status, node.last_event, node.payload = status, now, p
         node.active = status in ACTIVE
-        if event in {'Stop','SubagentStop','TaskCompleteFallback','SessionEnd','PostCompact'}:
+        if event in {'Stop','SubagentStop','TaskCompleteFallback','SessionEnd'} or event == 'PostCompact' and not node.compaction_resume:
             node.active, node.completion = False, now
             node.completion_event = event
         if event in {'Stop','TaskCompleteFallback'} and not node.parent:
@@ -144,6 +147,15 @@ class FamilyStore:
 
     def work_tokens(self):
         return {n.id+':'+n.turn for n in self.nodes.values() if n.active and not self.paused(n)}
+
+    def pending_work(self):
+        """Unfinished turns across families, independent of their current visual state."""
+        for node in self.nodes.values():
+            if node.observation_expired or node.status == 'interrupted':
+                continue
+            if node.active or (node.turn_started and node.completion_event not in {'Stop','SubagentStop','TaskCompleteFallback','SessionEnd','PostCompact'}):
+                return True
+        return False
 
     def expire_unconfirmed_start(self, actor, now):
         node = self.nodes[actor]

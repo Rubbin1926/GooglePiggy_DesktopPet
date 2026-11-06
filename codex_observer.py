@@ -127,6 +127,7 @@ class CodexObserver:
         self.internal_sessions = set()
         self.unread_supported = False
         self.background = None
+        self.ready = not enabled
 
     def enable_background(self):
         if self.enabled and self.background is None:
@@ -156,6 +157,7 @@ class CodexObserver:
     def _poll_background(self, now):
         batch = self.background.take()
         if batch is not None and 'error' not in batch:
+            self.ready = True
             self.metadata = {actor:dict(meta) for actor,meta in batch['metadata'].items()}
             for actor,meta in self.metadata.items():
                 node = self.store.nodes.get(actor)
@@ -351,6 +353,7 @@ class CodexObserver:
                     now-node.last_event > UNCONFIRMED_START_GRACE):
                     self.store.expire_unconfirmed_start(node.id,now)
         self.store.reconcile(now)
+        self.ready = True
 
 
 class ObserverReader:

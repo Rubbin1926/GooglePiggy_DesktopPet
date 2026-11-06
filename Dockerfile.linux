@@ -35,6 +35,12 @@ RUN QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
     tools.test_linux_port.GeometryTests.test_small_work_area_keeps_a_reachable_parent_tail \
     tools.test_linux_port.GeometryTests.test_overlay_dock_reservation_respects_position_and_monitor \
     tools.test_linux_port.QtTests.test_tail_transparent_padding_is_clickable_on_all_four_edges -q \
+    && QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest \
+    tools.test_sleep_habits \
+    tools.test_linux_port.QtTests.test_habits_dialog_saves_delays_and_preserves_other_settings \
+    tools.test_linux_port.QtTests.test_habits_save_error_does_not_claim_success \
+    tools.test_linux_port.QtTests.test_global_sleep_waits_for_both_tasks_and_compaction \
+    tools.test_linux_port.QtTests.test_sleep_waits_for_initial_observation_and_open_menus -q \
     && ./build-linux.sh
 RUN QT_QPA_PLATFORM=offscreen dist/GooglePiggy/googlepiggy \
     --state-dir /tmp/googlepiggy-build-smoke --no-observe --no-update-check --quit-after 2

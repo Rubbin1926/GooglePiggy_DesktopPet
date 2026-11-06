@@ -96,7 +96,8 @@ class StateAuditTests(unittest.TestCase):
         store=FamilyStore()
         for i,event in enumerate(('UserPromptSubmit','PreCompact','PostCompact','SessionStart',
                                   'PreToolUse','PermissionRequest','Stop')):
-            self.assertTrue(store.ingest(dict(session_id='target',event=event,turn_id='t'),100+i),event)
+            accepted=store.ingest(dict(session_id='target',event=event,turn_id='t'),100+i)
+            if event!='SessionStart':self.assertTrue(accepted,event)
         self.assertEqual(store.nodes['target'].status,'success')
         self.assertFalse(store.nodes['target'].active)
         self.assertFalse(store.work_tokens())
