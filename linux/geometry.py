@@ -44,26 +44,48 @@ def touched_edge(rect, screen, screens, tolerance=10):
     return min(candidates)[1] if candidates else None
 
 
+def tail_safe_screen(screen, dock, primary=True):
+    """Reserve overlay space for an auto-hiding Dock without shrinking pet movement."""
+    if not dock:
+        return screen
+    edge, size, multiple, fixed = dock
+    if fixed or not primary and not multiple:
+        return screen
+    work = list(screen.work)
+    size = min(size, (work[2]-work[0] if edge in ('left','right') else work[3]-work[1])//3)
+    if edge == 'left': work[0] += size
+    elif edge == 'right': work[2] -= size
+    elif edge == 'top': work[1] += size
+    else: work[3] -= size
+    return Screen(screen.frame, tuple(work))
+
+
 def tail_rects(edge, screen, anchor, count, scale=1):
-    """Keep the exposed tail group in the usable area, clear of GNOME panels."""
+    """Fully visible, comfortably clickable tail targets inside the usable area."""
     left, top, right, bottom = screen.work
-    size, child, gap = round(68*scale), round(32*scale), round(4*scale)
+    shortest = min(right-left, bottom-top)
+    inset = min(max(12, min(24, round(shortest*.02))), max(0, (shortest-1)//4))
     vertical = edge in ('left', 'right')
     low, high = (top, bottom) if vertical else (left, right)
+    available = high-low-2*inset
+    limit = max(1, min(available, (right-left if vertical else bottom-top)-2*inset))
+    size, child = min(limit, max(48, round(68*scale))), min(limit, max(48, round(32*scale)))
+    gap = max(6, round(4*scale))
+    while count and size+count*(child+gap) > available:
+        count -= 1
     extent = size + count*(child+gap)
-    start = max(low+4, min(anchor[1] if vertical else anchor[0], high-extent-4))
+    start = max(low+inset, min(round((anchor[1] if vertical else anchor[0])-size/2), high-extent-inset))
     result = []
     for i in range(count+1):
         side = size if i == 0 else child
         along = start if i == 0 else start+size+gap+(i-1)*(child+gap)
-        visible = round((30 if i == 0 else 14)*scale)
         if edge == 'left':
-            rect = left-(side-visible), along, left+visible, along+side
+            rect = left+inset, along, left+inset+side, along+side
         elif edge == 'right':
-            rect = right-visible, along, right+(side-visible), along+side
+            rect = right-inset-side, along, right-inset, along+side
         elif edge == 'top':
-            rect = along, top-(side-visible), along+side, top+visible
+            rect = along, top+inset, along+side, top+inset+side
         else:
-            rect = along, bottom-visible, along+side, bottom+(side-visible)
+            rect = along, bottom-inset-side, along+side, bottom-inset
         result.append(rect)
     return result

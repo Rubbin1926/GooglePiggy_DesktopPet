@@ -20,7 +20,8 @@ from PIL import Image
 from codex_bridge import atomic_json
 from codex_observer import CodexObserver
 from family_store import FamilyStore
-from linux.geometry import Screen, fit_delta, tail_rects, touched_edge, translate
+from linux.dock import DockSettings
+from linux.geometry import Screen, fit_delta, tail_rects, tail_safe_screen, touched_edge, translate
 from linux.hook import handle, heartbeat_fresh, permission_summary
 from linux.integration import merge_hooks, install, uninstall
 from linux.paths import utc_now
@@ -290,6 +291,29 @@ class HookTests(unittest.TestCase):
         self.assertNotIn('json-secret', summary)
 
 
+class DockSettingsTests(unittest.TestCase):
+    def test_read_only_settings_and_packaged_environment(self):
+        for edge in ('left','right','top','bottom'):
+            output='\n'.join('org.gnome.shell.extensions.dash-to-dock '+key+' '+value for key,value in (
+                ('dock-position',"'"+edge.upper()+"'"),('dash-max-icon-size','96'),
+                ('multi-monitor','true'),('dock-fixed','false')))
+            settings=DockSettings()
+            with patch('linux.dock.subprocess.run',return_value=SimpleNamespace(stdout=output,returncode=0)) as run, \
+                 patch.object(sys,'frozen',True,create=True), \
+                 patch.dict(os.environ,{'LD_LIBRARY_PATH':'/bundled','LD_LIBRARY_PATH_ORIG':'/original'}):
+                settings._read()
+            self.assertEqual(settings.value,(edge,128,True,False))
+            self.assertEqual(run.call_args.args[0][1],'list-recursively')
+            self.assertEqual(run.call_args.kwargs['env']['LD_LIBRARY_PATH'],'/original')
+
+    def test_missing_or_unresponsive_settings_fall_back_to_work_area(self):
+        for error in (FileNotFoundError(),subprocess.TimeoutExpired('gsettings',1)):
+            settings=DockSettings();settings.value=('left',80,False,False)
+            with patch('linux.dock.subprocess.run',side_effect=error):settings._read()
+            self.assertIsNone(settings.value)
+            self.assertFalse(settings.reading)
+
+
 class GeometryTests(unittest.TestCase):
     def test_screen_seam_is_not_a_hiding_edge(self):
         left = Screen((-1920, 0, 0, 1080), (-1850, 24, 0, 1080))
@@ -316,6 +340,47 @@ class GeometryTests(unittest.TestCase):
                 else:
                     self.assertGreaterEqual(min(r[0] for r in rects), screen.work[0])
                     self.assertLessEqual(max(r[2] for r in rects), screen.work[2])
+
+    def test_tail_targets_fit_all_edges_dock_positions_and_scales(self):
+        for width,height in ((1280,720),(1920,1080),(2560,1440)):
+            for work in ((120,36,width,height),(0,36,width-120,height),
+                         (0,120,width,height),(0,36,width,height-120)):
+                screen=Screen((0,0,width,height),work)
+                for edge in ('left','right','top','bottom'):
+                    for scale in (.5,1,2):
+                        with self.subTest(work=work,edge=edge,scale=scale):
+                            rects=tail_rects(edge,screen,(width//2,height//2),3,scale)
+                            self.assertEqual(len(rects),4)
+                            for rect in rects:
+                                self.assertGreaterEqual(rect[0],work[0]+8)
+                                self.assertGreaterEqual(rect[1],work[1]+8)
+                                self.assertLessEqual(rect[2],work[2]-8)
+                                self.assertLessEqual(rect[3],work[3]-8)
+                                self.assertGreaterEqual(rect[2]-rect[0],48)
+                                self.assertGreaterEqual(rect[3]-rect[1],48)
+
+    def test_small_work_area_keeps_a_reachable_parent_tail(self):
+        screen=Screen((-320,0,0,240),(-320,40,0,200))
+        for edge in ('left','right','top','bottom'):
+            rects=tail_rects(edge,screen,(-1,1000),3,2)
+            self.assertTrue(rects)
+            for rect in rects:
+                self.assertGreaterEqual(rect[0],screen.work[0])
+                self.assertGreaterEqual(rect[1],screen.work[1])
+                self.assertLessEqual(rect[2],screen.work[2])
+                self.assertLessEqual(rect[3],screen.work[3])
+
+    def test_overlay_dock_reservation_respects_position_and_monitor(self):
+        screen=Screen((0,0,1920,1080),(0,36,1920,1080))
+        for edge in ('left','right','top','bottom'):
+            safe=tail_safe_screen(screen,(edge,128,False,False))
+            expected=list(screen.work)
+            index={'left':0,'top':1,'right':2,'bottom':3}[edge]
+            expected[index] += 128 if index<2 else -128
+            self.assertEqual(safe.work,tuple(expected))
+            self.assertEqual(tail_safe_screen(screen,(edge,128,False,True)),screen)
+            self.assertEqual(tail_safe_screen(screen,(edge,128,False,False),primary=False),screen)
+            self.assertEqual(tail_safe_screen(screen,(edge,128,True,False),primary=False),safe)
 
     def test_input_rectangles_cover_visible_pixels_without_empty_canvas(self):
         image = Image.new('RGBA', (8, 8))
@@ -641,6 +706,25 @@ class QtTests(unittest.TestCase):
         QTest.mouseClick(w.tail, Qt.MouseButton.LeftButton, pos=QPoint(20, 20))
         self.assertFalse(w.hidden)
         self.assertEqual(w.transition[0], 'reveal')
+
+    def test_tail_transparent_padding_is_clickable_on_all_four_edges(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        w=self.window
+        screen=w.screens()[0]
+        w.tail.dock_settings=SimpleNamespace(poll=lambda now:('left',128,True,False))
+        for edge in ('left','right','top','bottom'):
+            w.hidden_edge,w.hidden_screen=edge,screen
+            w.home_anchor=QPoint((screen.work[0]+screen.work[2])//2,(screen.work[1]+screen.work[3])//2)
+            with patch.object(w.input_shape,'apply') as shape:
+                w.tail.refresh()
+            hit=shape.call_args.args[1]
+            self.assertGreaterEqual(w.tail.x(),screen.work[0]+128+8)
+            self.assertEqual(w.tail.image.pixelColor(1,1).alpha(),0)
+            self.assertEqual(hit.getpixel((1,1))[3],255)
+            with patch.object(w,'reveal') as reveal:
+                QTest.mouseClick(w.tail,Qt.MouseButton.LeftButton,pos=QPoint(1,1))
+                reveal.assert_called_once_with()
 
     def test_appearance_preview_saves_without_creating_tasks(self):
         from PySide6.QtWidgets import QCheckBox

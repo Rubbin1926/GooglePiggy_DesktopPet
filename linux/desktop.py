@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import datetime
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from PySide6.QtCore import QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QColor, QCursor, QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QFormLayout,
@@ -21,7 +21,8 @@ from family_store import FamilyStore
 from leisure import Leisure
 from update_notice import UpdateNotice
 from linux import VERSION
-from linux.geometry import Screen, fit_delta, inside, intersection, tail_rects, touched_edge, translate, union
+from linux.dock import DockSettings
+from linux.geometry import Screen, fit_delta, inside, intersection, tail_rects, tail_safe_screen, touched_edge, translate, union
 from linux.integration import autostart_enabled, set_autostart
 from linux.paths import app_root, approval_mode, font_file, pid_alive, read_json, resource_root, state_dir, utc_now
 from linux.render import Renderer, resize
@@ -49,22 +50,37 @@ class TailWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowTitle('GooglePiggy · 尾巴')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip('点击这里唤回小猪')
+        self.dock_settings = DockSettings() if QApplication.platformName() == 'xcb' else None
+        if self.dock_settings:
+            self.dock_settings.poll(pet.now)
         self.image = QImage()
 
     def refresh(self):
         pet = self.pet
         count = min(3, len(pet.store.children(pet.store.selected, pet.wall)))
-        rects = tail_rects(pet.hidden_edge, pet.hidden_screen, tuple(pet.home_anchor.toTuple()), count, pet.appearance.petScale)
+        screen = pet.hidden_screen
+        primary = QApplication.primaryScreen()
+        dock = self.dock_settings.poll(pet.now) if self.dock_settings else None
+        screen = tail_safe_screen(screen, dock, not primary or screen.frame == screen_rect(primary.geometry()))
+        rects = tail_rects(pet.hidden_edge, screen, tuple(pet.home_anchor.toTuple()), count, pet.appearance.petScale)
         bounds = union(rects)
         image = Image.new('RGBA', (bounds[2]-bounds[0], bounds[3]-bounds[1]))
+        hit = Image.new('RGBA', image.size)
+        draw = ImageDraw.Draw(hit)
         source = pet.tails[pet.hidden_edge]
-        for rect in rects:
-            sprite = resize(source, (rect[2]-rect[0], rect[3]-rect[1]))
-            image.alpha_composite(sprite, (rect[0]-bounds[0], rect[1]-bounds[1]))
+        for i, rect in enumerate(rects):
+            side = rect[2]-rect[0]
+            artwork = side if i == 0 else min(side, max(28, round(32*pet.appearance.petScale)))
+            sprite = resize(source, (artwork, artwork))
+            x, y = rect[0]-bounds[0], rect[1]-bounds[1]
+            image.alpha_composite(sprite, (x+(side-artwork)//2, y+(side-artwork)//2))
+            draw.rectangle((x, y, x+side-1, y+side-1), fill=(255,255,255,255))
         self.image = qimage(image)
         self.setGeometry(bounds[0], bounds[1], image.width, image.height)
         self.show()
-        pet.input_shape.apply(self, image)
+        pet.input_shape.apply(self, hit)
         self.update()
 
     def paintEvent(self, event):
