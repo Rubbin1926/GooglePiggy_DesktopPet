@@ -1,4 +1,4 @@
-"""Ubuntu 22.04 / Python 3.10 X11 input masks; keep antialiased artwork unclipped."""
+"""X11 input masks for Ubuntu LTS; keep antialiased artwork unclipped."""
 import ctypes
 import ctypes.util
 import numpy as np

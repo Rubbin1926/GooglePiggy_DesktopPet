@@ -142,7 +142,7 @@ GNOME Dock 识别使用 Ubuntu Desktop 自带的 `gsettings`；精简桌面若�
 | 独立运行 | 没有 Codex 也可使用待机、点击、拖拽、休息与外观功能。 |
 | 支持平台 | Ubuntu 22.04 / 24.04 LTS Desktop，x86_64、GNOME Xorg；分别使用系统 Python 3.10 / 3.12。Wayland 暂不支持。 |
 
-最小检查涵盖模式菜单、休息条件、睡眠与唤醒、任务状态、压缩恢复和过期审批。安装与平台验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。
+两套系统分别检查安装、自启动、任务与审批、睡眠习性、设置恢复，以及不同 Dock 与缩放下的实际鼠标交互。完整验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。
 
 Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留在 GNOME 可用工作区中。
 相邻显示器接缝不触发隐藏。多显示器几何测试与真实扩展屏验收分别记录。
@@ -170,7 +170,7 @@ Git 安装可在更新源码后重新运行 `./setup-linux.sh`。用户状态保
 卸载运行 `./uninstall-linux.sh`，移除本项目的应用入口、自启动及 Hook，保留用户状态和备份。
 退出程序后可以手动移走安装目录。
 
-## 构建与最小检查
+## 构建与验证
 
 安装包只包含程序与资源，在 Ubuntu 22.04 或 24.04 上运行即可构建，无需 PyInstaller 或额外解释器：
 
@@ -178,7 +178,7 @@ Git 安装可在更新源码后重新运行 `./setup-linux.sh`。用户状态保
 ./build-linux.sh
 ```
 
-构建脚本不自动执行完整回归。最小验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)；Linux CI 为手动触发。
+构建脚本不自动执行完整回归。验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)；Linux CI 为手动触发。
 Git 仓库中的 `Dockerfile.linux` 可通过 `--build-arg UBUNTU_VERSION=24.04` 验证另一系统版本，默认 22.04；本地测试也可使用项目目录内的隔离根文件系统。
 
 输出为 `dist/GooglePiggy/`、Linux 压缩包和 `SHA256SUMS.txt`。不要在正在使用的程序目录上重新构建。

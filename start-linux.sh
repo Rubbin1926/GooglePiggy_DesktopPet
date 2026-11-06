@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+unset PYTHONHOME PYTHONPATH
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 if [ -x "$APP_DIR/googlepiggy" ] && [ ! -f "$APP_DIR/linux_pet.py" ]; then
     exec "$APP_DIR/googlepiggy" "$@"

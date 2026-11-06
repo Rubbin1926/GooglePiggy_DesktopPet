@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+unset PYTHONHOME PYTHONPATH
 APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$APP_DIR"
 ./install-deps-linux.sh --source

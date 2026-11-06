@@ -1,4 +1,4 @@
-"""Exercise the packaged executable on X11 using isolated, synthetic task events."""
+"""Exercise an installed system-Python package using isolated task events."""
 import argparse
 import json
 import os
@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from codex_bridge import atomic_json, publish_event
 from linux import VERSION
 from linux.paths import read_json
-from linux.update import MANIFEST, digest
 
 
 def wait_for(predicate, timeout=15):
@@ -43,7 +42,7 @@ def stop_heartbeat_process(state, executable):
     if isinstance(pid, int):
         proc = Path(f'/proc/{pid}/exe')
         try:
-            if proc.resolve() == executable.resolve():
+            if str(executable.parent/'linux_pet.py') in Path(f'/proc/{pid}/cmdline').read_bytes().decode().split('\0'):
                 os.kill(pid, signal.SIGTERM)
                 wait_for(lambda: not proc.exists(), timeout=6)
         except ProcessLookupError:
@@ -52,6 +51,7 @@ def stop_heartbeat_process(state, executable):
 
 def run(executable, report, platform):
     checks = {}
+    report.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='googlepiggy-runtime-') as tmp:
         root = Path(tmp)
         env = dict(os.environ, QT_QPA_PLATFORM=platform, CODEX_HOME=str(root/'empty-codex'),
@@ -59,8 +59,8 @@ def run(executable, report, platform):
         # This deliberately excludes the development venv.
         qa = subprocess.run([str(executable), '--qa-only'], env=env, capture_output=True, text=True, timeout=15, check=True)
         info = json.loads(qa.stdout)
-        checks['bundled_python_and_assets'] = info['frames'] == 2167
-        checks['bundled_python310'] = bool(info.get('frozen')) and info.get('python', '').startswith('3.10.')
+        checks['animation_assets'] = info['frames'] == 2167 and info['animations'] == 21
+        checks['system_python'] = not info.get('frozen') and info['python'].split('.')[:2] == [str(v) for v in sys.version_info[:2]]
         hook_env = dict(env)
         hook_env.pop('DISPLAY', None)
         hook_env.pop('WAYLAND_DISPLAY', None)
@@ -71,9 +71,9 @@ def run(executable, report, platform):
         checks['hook_without_display'] = json.loads(hook.stdout) == {} and len(list((hook_state/'family-events').glob('*.json'))) == 1
         state = root/'state'
         screenshot = report.parent/'linux-packaged-x11.png'
-        with (root/'runtime.log').open('w') as log:
+        with (report.parent/'runtime.log').open('w') as log:
             process = subprocess.Popen([str(executable), '--state-dir', str(state), '--no-observe',
-                      '--no-update-check', '--quit-after', '40', '--capture', str(screenshot)], env=env, stdout=log, stderr=log)
+                      '--no-update-check', '--quit-after', '90', '--capture', str(screenshot)], env=env, stdout=log, stderr=log)
             try:
                 def heartbeat():
                     return read_json(state/'pig-heartbeat.json') or {}
@@ -115,41 +115,41 @@ def run(executable, report, platform):
                 checks['own_window_capture'] = screenshot.is_file()
             finally:
                 stop(process)
-        # Test replacement and real-process rollback without touching the installed app.
         print('Packaged lifecycle and single-instance checks passed.', flush=True)
-        source = executable.parent
-        for healthy in (False, True):
-            installed = root/('installed-ok' if healthy else 'installed-rollback')
-            shutil.copytree(source, installed)
-            candidate = source
-            if not healthy:
-                candidate = root/'broken-candidate'
-                candidate.mkdir()
-                (candidate/'googlepiggy').write_text('#!/bin/sh\nexit 7\n')
-                (candidate/'googlepiggy').chmod(0o755)
-                atomic_json(candidate/MANIFEST, {'schema': 1, 'platform': 'linux-x86_64', 'version': VERSION,
-                            'files': {'googlepiggy': digest(candidate/'googlepiggy')}})
-            update_state = root/('update-ok' if healthy else 'update-rollback')
-            update_state.mkdir()
-            job = update_state/'job.json'
-            atomic_json(job, {'target': str(installed), 'package': str(candidate), 'version': VERSION,
-                              'old_pid': 99999999, 'state_dir': str(update_state)})
+        # Follow the documented manual-update path in a new directory and keep
+        # state outside the installation. No real desktop entries or hooks change.
+        installed = root/'updated-app'
+        shutil.copytree(executable.parent, installed,
+                        ignore=shutil.ignore_patterns('.venv', '__pycache__'))
+        settings = {'approvalMode': 'codex', 'idleSleepSeconds': 7, 'wakeAwakeSeconds': 17}
+        appearance = {'petScale': 1.25, 'taskOpacity': .8, 'taskColor': '#ffe4ed'}
+        atomic_json(state/'settings.json', settings)
+        atomic_json(state/'appearance.json', appearance)
+        env.update(XDG_DATA_HOME=str(root/'data'), XDG_CONFIG_HOME=str(root/'config'),
+                   XDG_STATE_HOME=str(root/'xdg-state'), GOOGLEPIGGY_STATE_DIR=str(state))
+        with (report.parent/'reinstall.log').open('w') as log:
+            subprocess.run([str(installed/'setup-linux.sh')], env=env, stdout=log, stderr=log,
+                           timeout=180, check=True)
+            subprocess.run([str(installed/'googlepiggy'), '--install', '--no-autostart'],
+                           env=env, stdout=log, stderr=log, timeout=15, check=True)
+            launcher = root/'data/applications/googlepiggy-linux.desktop'
+            subprocess.run(['desktop-file-validate', str(launcher)], env=env, check=True)
+            checks['registered_launcher_and_hooks'] = launcher.is_file() and (root/'empty-codex/hooks.json').is_file()
             try:
-                helper_log = update_state/'helper.log'
-                # A restarted GUI inherits stdout. A file avoids waiting for the
-                # long-lived GUI to close the update helper's captured pipe.
-                with helper_log.open('w') as log:
-                    subprocess.run([str(installed/'googlepiggy'), '--apply-update', str(job)],
-                                   env=env, stdout=log, stderr=log, timeout=35)
-                outcome = read_json(update_state/'last-update.json')
-                if outcome is None:
-                    raise AssertionError(helper_log.read_text()[-3000:])
-                checks['real_update' if healthy else 'real_rollback'] = outcome['ok'] is healthy
-                wait_for(lambda: (read_json(update_state/'pig-heartbeat.json') or {}).get('window_visible'))
-                checks['relaunch_after_update' if healthy else 'relaunch_after_rollback'] = True
-                print('Real update passed.' if healthy else 'Real rollback passed.', flush=True)
+                subprocess.run(['gio', 'launch', str(launcher)], env=env, stdout=log,
+                               stderr=log, timeout=15, check=True)
+                restored = wait_for(lambda: (h if (h := read_json(state/'pig-heartbeat.json') or {}).get('window_visible')
+                                             and h.get('pid') != process.pid else None))
+                checks['launch_from_desktop_entry'] = restored['platform'] == platform
+                checks['settings_after_reinstall'] = (restored['approval_mode'] == 'codex'
+                    and restored['habits'] == {'idleSleepSeconds': 7, 'wakeAwakeSeconds': 17}
+                    and all(restored['appearance'][key] == value for key, value in appearance.items()))
             finally:
-                stop_heartbeat_process(update_state, installed/'googlepiggy')
+                stop_heartbeat_process(state, installed/'googlepiggy')
+            subprocess.run([str(installed/'googlepiggy'), '--uninstall'], env=env,
+                           stdout=log, stderr=log, timeout=15, check=True)
+            checks['uninstall_keeps_settings'] = not launcher.exists() and read_json(state/'settings.json') == settings
+        print('Manual reinstall, desktop launch, settings and uninstall passed.', flush=True)
     result = {'passed': all(checks.values()), 'platform': platform, 'version': VERSION+'-linux', 'checks': checks}
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(result, indent=2)+'\n')
