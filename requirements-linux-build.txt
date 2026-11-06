@@ -1,2 +1,0 @@
--r requirements-linux.lock
-pyinstaller>=6.10,<7

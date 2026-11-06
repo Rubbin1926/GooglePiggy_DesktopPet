@@ -9,7 +9,7 @@ from pathlib import Path
 
 def main():
     if sys.version_info < (3, 10):
-        raise SystemExit('桌宠需要 Python 3.10 或更高版本。Ubuntu 22.04 请运行 ./setup-linux.sh，再使用 ./start-linux.sh 启动。')
+        raise SystemExit('桌宠需要 Python 3.10 或更高版本。Ubuntu 22.04 / 24.04 请运行 ./setup-linux.sh，再使用 ./start-linux.sh 启动。')
     parser = argparse.ArgumentParser(description='GooglePiggy · Ubuntu 桌面小猪')
     parser.add_argument('--hook', action='store_true')
     parser.add_argument('--install', action='store_true')

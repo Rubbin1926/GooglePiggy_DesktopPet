@@ -1,4 +1,7 @@
-支持 **Ubuntu 22.04 Desktop、x86_64、Ubuntu on Xorg**。便携包包含 Python 3.10、Qt 和中文字体。
+支持 **Ubuntu 22.04 / 24.04 LTS Desktop、x86_64、GNOME Xorg**。
+使用各系统自带的 Python：22.04 为 **3.10**，24.04 为 **3.12**；依赖安装到项目 `.venv`，安装包不携带额外解释器。
+
+**需要 Xorg 会话。** 桌面终端运行 `echo "$XDG_SESSION_TYPE"` 应输出 `x11`；若为 `wayland`，请注销，在登录齿轮菜单选择 **Ubuntu on Xorg**。Wayland 暂不支持。
 
 ## 安装
 
@@ -9,13 +12,11 @@ sha256sum -c SHA256SUMS.txt
 mkdir -p GooglePiggy
 tar -xzf GooglePiggy-0.5.9-linux-x86_64.tar.gz -C GooglePiggy
 cd GooglePiggy
-./install-deps-linux.sh
+./setup-linux.sh
 ./start-linux.sh
 ```
 
-依赖脚本通过 Ubuntu APT 补齐缺少的桌面库和工具，需要 sudo 密码；便携包无需 pip 或另装 Python。
-使用 Wayland 时，请注销并在登录齿轮菜单选择 **Ubuntu on Xorg**。
-精简桌面若缺少 GNOME Dock 设置读取工具，可安装 `libglib2.0-bin`；不可用时仍按系统工作区放置尾巴。
+首次安装需要联网和 sudo 密码：脚本通过 Ubuntu APT 补齐桌面库、中文字体及 `python3-venv`，再从 PyPI 安装项目依赖。不更改系统 Python，也不向 24.04 安装 Python 3.10。
 
 ## 菜单、自启动与 Codex
 
@@ -37,8 +38,8 @@ cd GooglePiggy
 
 ## 更新、源码与许可
 
-此为测试版，不参与自动升级；更新前退出桌宠，完整替换程序目录。用户状态保存在用户目录中。
-源码解压后运行 `./setup-linux.sh`；构建另需 `python3-dev binutils`，也可使用仓库的 `Dockerfile.linux`。
+系统 Python 版通过 Releases 或 Git 手动更新；测试版不触发自动升级。更新前退出桌宠并备份旧目录，新目录运行 `./setup-linux.sh` 和 `./install-linux.sh`，用户状态保留。
+源码使用同一安装步骤；`./build-linux.sh` 可重新打包，无需额外解释器。
 
-代码遵循原仓库 MIT License，素材和依赖许可随包附带。
-详细安装、依赖与功能说明见 [README-LINUX.md](README-LINUX.md)。
+代码遵循原仓库 MIT License，素材和依赖许可随包说明。
+详细安装、依赖与验收范围见 [README-LINUX.md](README-LINUX.md)。

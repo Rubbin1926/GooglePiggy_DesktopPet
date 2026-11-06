@@ -952,7 +952,7 @@ class PetWindow(QWidget):
             self.updater.cancel.set()
         elif action == 'update' and self.notice.release:
             if not getattr(sys, 'frozen', False):
-                self.notice.error = '源码运行请使用 Git 更新；发行包支持自动备份更新。'
+                self.notice.error = '系统 Python 版请通过 Git 或 Releases 更新，再运行 setup-linux.sh。'
             else:
                 self.notice.error, self.notice.phase = None, 'downloading'
                 self.updater.download(self.notice.release)
@@ -1027,7 +1027,7 @@ def run(args):
         if font_file():
             app.setFont(QFont('Noto Sans CJK SC', 10))
         if app.platformName() == 'wayland':
-            raise RuntimeError('首版需要 GNOME/X11；Wayland 不提供桌宠所需的绝对定位。请使用 Ubuntu on Xorg 会话。')
+            raise RuntimeError('需要 Ubuntu 22.04 / 24.04 的 GNOME Xorg 会话。请注销，在登录界面的齿轮菜单选择 Ubuntu on Xorg。Wayland 暂不支持。')
         window = PetWindow(args, directory)
         def report_error(kind, value, traceback):
             import traceback as trace

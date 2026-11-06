@@ -4,10 +4,10 @@
 
 ## 支持基线
 
-- Ubuntu 22.04 LTS **Desktop，x86_64**。
-- GNOME 的 **Ubuntu on Xorg** 会话。原生 Wayland 暂不支持；可在登录界面的齿轮菜单中选择 Xorg。
-- 源码使用 Ubuntu 22.04 自带的 **Python 3.10** 创建 `.venv`，不下载其他 Python 版本。
-- 便携包在原生 `ubuntu:22.04` 容器中用 Python 3.10 构建，包含运行时、Qt 和中文字体。
+- Ubuntu **22.04 / 24.04 LTS Desktop，x86_64**。
+- 必须使用 GNOME 的 **Xorg** 会话。桌面终端运行 `echo "$XDG_SESSION_TYPE"` 应输出 `x11`；若为 `wayland`，请注销，在登录界面选中用户后通过齿轮菜单选择 **Ubuntu on Xorg**。Wayland / XWayland 暂不在支持范围内。
+- 同一安装包使用系统 `/usr/bin/python3` 创建项目内的 `.venv`：**22.04 使用 Python 3.10，24.04 使用 Python 3.12**。
+- 安装包不包含解释器，不下载其他 Python 版本，也不修改系统 Python 的默认指向。
 - Codex 联动是可选功能；未安装 Codex 时也可以使用桌宠。
 
 ![Linux 界面预览，使用模拟任务展示](docs/linux-preview.png)
@@ -17,15 +17,16 @@
 [下载 Linux 测试版](https://github.com/Rubbin1926/GooglePiggy_DesktopPet/releases/tag/v0.5.9-linux)，完整解压到固定目录：
 
 ```sh
+sha256sum -c SHA256SUMS.txt
 mkdir -p GooglePiggy
 tar -xzf GooglePiggy-0.5.9-linux-x86_64.tar.gz -C GooglePiggy
 cd GooglePiggy
-./install-deps-linux.sh
+./setup-linux.sh
 ./start-linux.sh
 ```
 
-`install-deps-linux.sh` 检查 `requirements-linux-apt.txt` 中的标准 Ubuntu 桌面库、`xdg-utils` 和中文字体，只通过 APT 安装缺少的包；普通用户需要输入 sudo 密码。
-便携包本身不需要 pip 或额外的 Python 版本。
+同时下载 `SHA256SUMS.txt`。首次安装需要联网：`setup-linux.sh` 通过 APT 补齐桌面库、中文字体和 `python3-venv`，普通用户需要输入 sudo 密码；Python 依赖从 PyPI 安装到 `.venv`。
+依赖脚本自动选择 Ubuntu 22.04 的 `libglib2.0-0` 或 24.04 的 `libglib2.0-0t64`，不会向 24.04 安装 Python 3.10。
 
 登记应用菜单入口和自启动、暂不启用 Codex 联动：
 
@@ -47,9 +48,9 @@ cd GooglePiggy_DesktopPet
 ./start-linux.sh
 ```
 
-`setup-linux.sh` 自动补齐标准运行依赖以及 `python3-venv`，用 `/usr/bin/python3` 创建 Python 3.10 虚拟环境，并安装锁定的 Python 包。
+`setup-linux.sh` 使用本机 Ubuntu 的 `/usr/bin/python3` 创建虚拟环境，并安装适用于 Python 3.10 / 3.12 的同一份锁定依赖。
 启动脚本固定使用 `.venv/bin/python`，不需要手动激活。
-已有非 3.10 的 `.venv` 时，先将其移走或改名再运行安装脚本。
+如果升级了 Ubuntu、迁移了目录，或已有 `.venv` 的 Python 版本与系统不一致，请先将旧 `.venv` 移走或改名，再运行安装脚本。
 PySide6 / Shiboken 固定为兼容版本 6.8.3。
 
 ## 审批方式
@@ -136,10 +137,10 @@ GNOME Dock 识别使用 Ubuntu Desktop 自带的 `gsettings`；精简桌面若�
 | 外观 | 大小、间距、不透明度、背景和文字颜色；实际位置预览，自动保存，可恢复默认。 |
 | 位置与设置 | 保存位置、外观和审批方式；习性参数点击保存后保留，休息状态不跨重启保留。 |
 | 菜单与自启动 | 安装器登记应用入口、自启动；右键可关闭或开启自启动，也可完全退出。 |
-| 更新与回滚 | 只检查本 Fork 的正式 Linux Release；校验下载，启动失败回滚；测试版和同版本附件替换需手动安装。 |
+| 检查更新 | 只检查本 Fork 的正式 Linux Release；系统 Python 版通过 Releases 或 Git 手动更新，测试版和同版本附件替换不触发升级提示。 |
 | 卸载 | 移除本项目入口、自启动和 Hook，保留用户状态与备份。 |
 | 独立运行 | 没有 Codex 也可使用待机、点击、拖拽、休息与外观功能。 |
-| 支持平台 | Ubuntu 22.04 Desktop / x86_64 / Xorg / Python 3.10；原生 Wayland 暂不支持。 |
+| 支持平台 | Ubuntu 22.04 / 24.04 LTS Desktop，x86_64、GNOME Xorg；分别使用系统 Python 3.10 / 3.12。Wayland 暂不支持。 |
 
 最小检查涵盖模式菜单、休息条件、睡眠与唤醒、任务状态、压缩恢复和过期审批。安装与平台验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。
 
@@ -162,29 +163,23 @@ Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留�
 
 ## 更新与卸载
 
-便携发行包的“检查更新…”只识别本 Fork 的正式 `v版本-linux` 标签和对应 x86_64 包。
-下载后检查 GitHub SHA-256 摘要、文件清单和平台，拒绝路径穿越、链接和特殊文件。
-更新等待权限处理和拖动结束，保留旧目录备份；新进程启动检查失败时恢复旧目录并重新启动。
-预发布包不会触发自动升级。源码运行通过 Git 更新，不直接替换源码目录。
+“检查更新…”只识别本 Fork 的正式 `v版本-linux` 标签。预发布包和同版本附件替换不会触发升级提示。
+系统 Python 版请退出桌宠，备份旧目录后从 Releases 下载、校验并解压新包，重新运行 `./setup-linux.sh` 和 `./install-linux.sh`。
+Git 安装可在更新源码后重新运行 `./setup-linux.sh`。用户状态保存在用户目录中；安装目录变化后需重新登记入口与 Hook。
 
 卸载运行 `./uninstall-linux.sh`，移除本项目的应用入口、自启动及 Hook，保留用户状态和备份。
-退出程序后可以手动移走便携目录。
+退出程序后可以手动移走安装目录。
 
 ## 构建与最小检查
 
-推荐使用干净的 Ubuntu 22.04 容器构建，构建过程仅执行基础兼容性、审批与任务结束状态的针对性检查和两秒窗口启动。Docker 命令需要具有访问 Docker 服务的权限：
+安装包只包含程序与资源，在 Ubuntu 22.04 或 24.04 上运行即可构建，无需 PyInstaller 或额外解释器：
 
 ```sh
-sudo apt-get install -y docker.io
-sudo docker build --target build -f Dockerfile.linux -t googlepiggy-build .
-build_container=$(sudo docker create googlepiggy-build)
-mkdir -p dist
-sudo docker cp "$build_container:/app/dist/." ./dist/
-sudo docker rm "$build_container"
+./build-linux.sh
 ```
 
-原生 Ubuntu 22.04 上构建时，先安装 `python3-dev binutils`，运行 `./setup-linux.sh` 后，在虚拟环境内安装 `requirements-linux-build.txt`，再运行 `./build-linux.sh`。
-构建脚本不自动执行完整回归。Linux CI 为手动触发。
+构建脚本不自动执行完整回归。最小验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)；Linux CI 为手动触发。
+Git 仓库中的 `Dockerfile.linux` 可通过 `--build-arg UBUNTU_VERSION=24.04` 验证另一系统版本，默认 22.04；本地测试也可使用项目目录内的隔离根文件系统。
 
 输出为 `dist/GooglePiggy/`、Linux 压缩包和 `SHA256SUMS.txt`。不要在正在使用的程序目录上重新构建。
 上游部分文件已提交的行尾与 `.gitattributes` 不一致；开发时如出现初始行尾差异，可在本地 `.git/info/attributes` 添加 `* -text`。

@@ -18,7 +18,7 @@ DESKTOP_NAME = 'googlepiggy-linux.desktop'
 
 def command(root=None, interpreter=None):
     root = Path(root or app_root())
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, 'frozen', False) or (root/'googlepiggy').is_file():
         return [str(root/'googlepiggy')]
     return [str(Path(interpreter or sys.executable).absolute()), str(root/'linux_pet.py')]
 
