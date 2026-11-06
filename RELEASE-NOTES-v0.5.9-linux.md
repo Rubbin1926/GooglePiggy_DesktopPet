@@ -1,7 +1,4 @@
-# GooglePiggy · Ubuntu 22.04 LTS / Python 3.10 测试版
-
 支持 **Ubuntu 22.04 Desktop、x86_64、Ubuntu on Xorg**。便携包包含 Python 3.10、Qt 和中文字体。
-本次精简“小猪习性…”窗口说明，保留输入框、按钮和保存状态反馈。
 
 ## 安装
 

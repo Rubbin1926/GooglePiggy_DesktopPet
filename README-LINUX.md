@@ -141,7 +141,7 @@ GNOME Dock 识别使用 Ubuntu Desktop 自带的 `gsettings`；精简桌面若�
 | 独立运行 | 没有 Codex 也可使用待机、点击、拖拽、休息与外观功能。 |
 | 支持平台 | Ubuntu 22.04 Desktop / x86_64 / Xorg / Python 3.10；原生 Wayland 暂不支持。 |
 
-本次最小检查覆盖模式菜单、休息禁用条件、入睡与恢复、睡眠动画推进、新任务唤醒、任务状态文字，以及上下文压缩后的结束事件和过期审批。其他功能已实现，本次未重新执行全部回归；安装与平台验证范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。
+最小检查涵盖模式菜单、休息条件、睡眠与唤醒、任务状态、压缩恢复和过期审批。安装与平台验收范围见 [LINUX-PORTING.md](LINUX-PORTING.md)。
 
 Linux 使用四个外边缘，参考 macOS 行为；尾巴的可点击部分留在 GNOME 可用工作区中。
 相邻显示器接缝不触发隐藏。多显示器几何测试与真实扩展屏验收分别记录。
