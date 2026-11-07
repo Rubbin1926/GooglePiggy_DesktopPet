@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 import zstandard
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -80,6 +81,45 @@ class StateAuditTests(unittest.TestCase):
             observer=self.metadata_fixture(Path(tmp),'This is an app-generated request for a suggested next user message.')
             self.assertNotIn('target',observer.internal_sessions)
             self.assertIn('target',observer.store.nodes)
+
+    def test_guardian_reviews_are_excluded_from_the_task_list(self):
+        for background in (False, True):
+            with self.subTest(background=background), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                rollout = root/'r.jsonl'
+                rollout.write_text(record('task_started', 140), encoding='utf-8')
+                with sqlite3.connect(root/'state_1.sqlite') as db:
+                    db.execute('create table threads(id text, title text, source text, thread_source text, '
+                               'rollout_path text, updated_at integer)')
+                    db.executemany('insert into threads values (?,?,?,?,?,?)', [
+                        ('review', 'Guardian review', '{}', 'guardian_review', str(rollout), 4),
+                        ('legacy', 'Guardian review', '{"subagent":{"other":"guardian"}}', None, str(rollout), 3),
+                        ('user', 'Guardian review', '"vscode"', None, str(rollout), 2),
+                        ('child', 'Worker', '{"subagent":{"thread_spawn":{"parent_thread_id":"user"}}}',
+                         None, str(rollout), 1),
+                    ])
+                store = FamilyStore()
+                observer = CodexObserver(store, root, home=root)
+                observer.ingest(dict(session_id='review', event='UserPromptSubmit', turn_id='t', received_at=110))
+                observer.ingest(dict(session_id='review', event='Interrupt', turn_id='t', received_at=120))
+                self.assertEqual(store.selected, 'review')
+                if background:
+                    observer.enable_background()
+                try:
+                    observer.poll(200)
+                    deadline = time.monotonic()+2
+                    while not observer.ready and time.monotonic() < deadline:
+                        time.sleep(.01)
+                        observer.poll(200)
+                    self.assertTrue(observer.ready)
+                    self.assertEqual([node.id for node in store.roots(200)], ['user'])
+                    self.assertEqual([node.id for node in store.children('user', 200)], ['child'])
+                    self.assertEqual(store.selected, 'user')
+                    for actor in ('review', 'legacy'):
+                        self.assertNotIn(actor, store.nodes)
+                        self.assertFalse(observer.ingest(dict(session_id=actor, event='Stop', turn_id='t', received_at=201)))
+                finally:
+                    observer.close()
 
     def test_fresh_pretool_resumes_after_compaction_same_turn(self):
         store=FamilyStore()

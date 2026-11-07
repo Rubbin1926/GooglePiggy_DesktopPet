@@ -137,8 +137,16 @@ class CodexObserver:
         if self.background:
             self.background.close()
 
+    def _hide_internal(self, actor):
+        self.internal_sessions.add(actor)
+        self.store.nodes.pop(actor, None)
+        if self.store.selected == actor:
+            self.store.selected = ''
+        if self.store.pending == actor:
+            self.store.pending = None
+
     def _apply_lifecycle(self, actor, observed, now):
-        if not observed:
+        if not observed or actor in self.internal_sessions:
             return
         kind, turn, when = observed
         node = self.store.nodes.get(actor)
@@ -160,6 +168,9 @@ class CodexObserver:
             self.ready = True
             self.metadata = {actor:dict(meta) for actor,meta in batch['metadata'].items()}
             for actor,meta in self.metadata.items():
+                if meta.get('guardian_review'):
+                    self._hide_internal(actor)
+                    continue
                 node = self.store.nodes.get(actor)
                 if node:
                     if node.last_event > batch.get('node_versions',{}).get(actor,float('-inf')):
@@ -213,7 +224,7 @@ class CodexObserver:
             metadata = {} if refresh else dict(self.metadata)
             with closing(sqlite3.connect(databases[0].as_uri()+'?mode=ro',uri=True,timeout=.2)) as db:
                 cols = {row[1] for row in db.execute('PRAGMA table_info(threads)')}
-                wanted = [c for c in ('id','name','title','source','rollout_path') if c in cols]
+                wanted = [c for c in ('id','name','title','source','thread_source','rollout_path') if c in cols]
                 if 'id' not in cols:
                     return
                 order = ' ORDER BY updated_at DESC' if 'updated_at' in cols else ''
@@ -228,18 +239,24 @@ class CodexObserver:
                 for values in rows:
                     row = dict(zip(wanted,values))
                     parent = ''
+                    guardian_review = row.get('thread_source') == 'guardian_review'
                     try:
-                        source = json.loads(row.get('source') or '{}')
-                        parent = source.get('subagent',{}).get('thread_spawn',{}).get('parent_thread_id','')
+                        subagent = json.loads(row.get('source') or '{}').get('subagent',{})
+                        guardian_review = guardian_review or subagent.get('other') == 'guardian'
+                        parent = subagent.get('thread_spawn',{}).get('parent_thread_id','')
                     except (ValueError, AttributeError):
                         pass
                     metadata[row['id']] = {'thread_title':row.get('name') or row.get('title') or '',
-                        'parent_thread_id':parent,'rollout':row.get('rollout_path') or ''}
+                        'parent_thread_id':parent,'rollout':row.get('rollout_path') or '',
+                        'guardian_review':guardian_review}
             self.metadata = metadata
             self.metadata_lookups.update(metadata)
         except (sqlite3.Error,OSError):
             return
         for actor, meta in self.metadata.items():
+            if meta.get('guardian_review'):
+                self._hide_internal(actor)
+                continue
             node = self.store.nodes.get(actor)
             if node:
                 if meta['thread_title']:
@@ -272,12 +289,7 @@ class CodexObserver:
             not self.metadata.get(actor, {}).get('parent_thread_id') and
             not getattr(self.store.nodes.get(actor), 'parent', '') and
             (memory_request or title_request or safety_request or preview.startswith(INTERNAL_PROMPT_PREFIXES))):
-            self.internal_sessions.add(actor)
-            self.store.nodes.pop(actor,None) # SessionStart may already exist.
-            if self.store.selected == actor:
-                self.store.selected = ''
-            if self.store.pending == actor:
-                self.store.pending = None
+            self._hide_internal(actor)  # SessionStart may already exist.
         if actor in self.internal_sessions:
             return False
         meta = self.metadata.get(actor,{})
@@ -318,7 +330,7 @@ class CodexObserver:
             candidates.update({n.id:{'rollout':n.rollout} for n in self.store.nodes.values() if n.rollout})
             for actor, meta in candidates.items():
                 path = meta.get('rollout')
-                if not path:
+                if not path or actor in self.internal_sessions:
                     continue
                 try:
                     actual = rollout_file(path)
@@ -427,7 +439,8 @@ class ObserverReader:
             candidates.update({actor:path for actor,(path,_) in nodes.items() if path})
             for actor,path in candidates.items():
                 if self.closed.is_set(): break
-                if not path: continue
+                if not path or actor in reader.internal_sessions:
+                    continue
                 try:
                     actual = rollout_file(path)
                     info = actual.stat()
