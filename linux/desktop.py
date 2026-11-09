@@ -23,7 +23,7 @@ from update_notice import UpdateNotice
 from linux import VERSION
 from linux.dock import DockSettings
 from linux.geometry import Screen, fit_delta, inside, intersection, tail_rects, tail_safe_screen, touched_edge, translate, union
-from linux.integration import autostart_enabled, set_autostart
+from linux.integration import autostart_enabled, repair_registered_icons, set_autostart
 from linux.paths import HABIT_DEFAULTS, HABIT_LIMITS, app_root, approval_mode, font_file, habits_settings, pid_alive, read_json, resource_root, state_dir, utc_now
 from linux.render import Renderer, resize
 from linux.update import Updater
@@ -1028,6 +1028,7 @@ def run(args):
             app.setFont(QFont('Noto Sans CJK SC', 10))
         if app.platformName() == 'wayland':
             raise RuntimeError('需要 Ubuntu 22.04 / 24.04 的 GNOME Xorg 会话。请注销，在登录界面的齿轮菜单选择 Ubuntu on Xorg。Wayland 暂不支持。')
+        repair_registered_icons()
         window = PetWindow(args, directory)
         def report_error(kind, value, traceback):
             import traceback as trace

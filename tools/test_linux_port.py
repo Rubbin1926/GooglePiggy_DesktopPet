@@ -86,6 +86,7 @@ class IntegrationTests(unittest.TestCase):
                 merge_hooks(value, 'new --hook')
 
     def test_install_uninstall_with_existing_hooks_and_unicode_path(self):
+        from linux.paths import resource_root
         with tempfile.TemporaryDirectory(prefix='pig-中文-') as tmp:
             root = Path(tmp)
             env = {'CODEX_HOME': str(root/'codex'), 'GOOGLEPIGGY_STATE_DIR': str(root/'state'),
@@ -102,10 +103,38 @@ class IntegrationTests(unittest.TestCase):
                 self.assertTrue((root/'config/autostart/googlepiggy-linux.desktop').is_file())
                 launcher = root/'data/applications/googlepiggy-linux.desktop'
                 subprocess.run(['desktop-file-validate', str(launcher)], check=True)
+                icon = root/'data/googlepiggy/AppIcon-1024.png'
+                self.assertIn(f'Icon={icon}\n', launcher.read_text())
+                self.assertEqual(icon.read_bytes(), (resource_root()/'AppIcon-1024.png').read_bytes())
                 uninstall()
                 self.assertEqual(original, json.loads(hookfile.read_text()))
                 self.assertFalse(launcher.exists())
+                self.assertFalse(icon.exists())
                 self.assertTrue((root/'state').is_dir())
+
+    def test_repairs_legacy_desktop_icons(self):
+        from linux.integration import repair_registered_icons
+        from linux.paths import app_root, resource_root
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.dict(os.environ, {'XDG_DATA_HOME': str(root/'data'), 'XDG_CONFIG_HOME': str(root/'config')}):
+                launcher = root/'data/applications/googlepiggy-linux.desktop'
+                autostart = root/'config/autostart/googlepiggy-linux.desktop'
+                old = app_root()/'_internal/assets/macos-resources/AppIcon-1024.png'
+                icon = root/'data/googlepiggy/AppIcon-1024.png'
+                original = (f'[Desktop Entry]\r\nType=Application\r\nName=Custom pig\r\n'
+                            f'Exec=/usr/bin/true\r\nIcon={old}\r\nX-GooglePiggy-Linux=true\r\n').encode()
+                startup = original + b'X-GNOME-Autostart-enabled=false\r\n'
+                for entry, contents in ((launcher, original), (autostart, startup)):
+                    entry.parent.mkdir(parents=True)
+                    entry.write_bytes(contents)
+                repair_registered_icons()
+                self.assertEqual(launcher.read_bytes(), original.replace(str(old).encode(), str(icon).encode()))
+                self.assertEqual(autostart.read_bytes(), startup.replace(str(old).encode(), str(icon).encode()))
+                self.assertEqual(icon.read_bytes(), (resource_root()/'AppIcon-1024.png').read_bytes())
+                icon.unlink()
+                repair_registered_icons()
+                self.assertTrue(icon.is_file())
 
 
 class HookTests(unittest.TestCase):

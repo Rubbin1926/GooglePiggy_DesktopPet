@@ -10,10 +10,12 @@ from pathlib import Path
 
 from codex_bridge import atomic_json
 from linux.hook import EVENTS
-from linux.paths import app_root, codex_home, config_dir, data_dir, state_dir
+from linux.paths import app_root, codex_home, config_dir, data_dir, resource_root, state_dir
 
 MARKER = 'GooglePiggy Linux'
 DESKTOP_NAME = 'googlepiggy-linux.desktop'
+DESKTOP_MARKER = 'X-GooglePiggy-Linux=true'
+ICON_NAME = 'AppIcon-1024.png'
 
 
 def command(root=None, interpreter=None):
@@ -23,24 +25,82 @@ def command(root=None, interpreter=None):
     return [str(Path(interpreter or sys.executable).absolute()), str(root/'linux_pet.py')]
 
 
+def _launcher_path():
+    return data_dir()/'applications'/DESKTOP_NAME
+
+
+def _icon_path():
+    return data_dir()/'googlepiggy'/ICON_NAME
+
+
+def _replace_file(path, contents):
+    temp = path.with_name(f'.{path.name}.{uuid.uuid4().hex}.tmp')
+    try:
+        temp.write_bytes(contents)
+        if path.exists():
+            temp.chmod(path.stat().st_mode & 0o777)
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _install_icon():
+    icon = _icon_path()
+    contents = (resource_root()/ICON_NAME).read_bytes()
+    if not icon.is_file() or icon.read_bytes() != contents:
+        icon.parent.mkdir(parents=True, exist_ok=True)
+        _replace_file(icon, contents)
+
+
 def desktop_text(args):
     def quote(value):
         value = value.replace('%', '%%')
         for char in ('\\', '"', '`', '$'):
             value = value.replace(char, '\\'+char)
         return '"'+value+'"'
-    icon = app_root()/'assets/macos-resources/AppIcon-1024.png'
-    if not icon.exists():
-        icon = Path(getattr(sys, '_MEIPASS', app_root()))/'assets/macos-resources/AppIcon-1024.png'
     return ('[Desktop Entry]\nType=Application\nName=GooglePiggy 小猪桌宠\n'
             'Comment=Codex desktop companion for Ubuntu\n'
             'Exec='+' '.join(quote(arg) for arg in args)+'\n'
-            f'Icon={icon}\nTerminal=false\nCategories=Utility;\n'
-            'StartupNotify=false\nX-GooglePiggy-Linux=true\n')
+            f'Icon={_icon_path()}\nTerminal=false\nCategories=Utility;\n'
+            f'StartupNotify=false\n{DESKTOP_MARKER}\n')
 
 
 def autostart_path():
     return config_dir()/'autostart'/DESKTOP_NAME
+
+
+def repair_registered_icons():
+    """Migrate icon references from older package layouts on GUI startup."""
+    root = app_root()
+    legacy_icons = {root/'assets/macos-resources'/ICON_NAME,
+                    root/'_internal/assets/macos-resources'/ICON_NAME,
+                    resource_root()/ICON_NAME}
+    legacy_lines = {f'Icon={icon}'.encode() for icon in legacy_icons}
+    icon = _icon_path()
+    icon_line = f'Icon={icon}'.encode()
+    for entry in (_launcher_path(), autostart_path()):
+        if entry.is_symlink():
+            continue
+        try:
+            contents = entry.read_bytes()
+            if DESKTOP_MARKER.encode() not in contents.splitlines():
+                continue
+            lines = contents.splitlines(keepends=True)
+            for index, line in enumerate(lines):
+                if not line.startswith(b'Icon='):
+                    continue
+                old = line.rstrip(b'\r\n')
+                if old in legacy_lines:
+                    _install_icon()
+                    lines[index] = icon_line + line[len(old):]
+                    if entry.read_bytes() == contents:
+                        _replace_file(entry, b''.join(lines))
+                elif old == icon_line and not icon.is_file():
+                    _install_icon()
+                break
+        except OSError:
+            # A missing or unwritable launcher must not prevent the pet from starting.
+            continue
 
 
 def autostart_enabled():
@@ -51,12 +111,13 @@ def autostart_enabled():
 def set_autostart(enabled, args=None):
     path = autostart_path()
     if enabled:
+        _install_icon()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(desktop_text(args or command())+'X-GNOME-Autostart-enabled=true\n', encoding='utf-8')
         if not autostart_enabled():
             raise OSError('无法读回自启动配置')
     elif path.exists():
-        if 'X-GooglePiggy-Linux=true' not in path.read_text(encoding='utf-8'):
+        if DESKTOP_MARKER not in path.read_text(encoding='utf-8'):
             raise ValueError('自启动文件不是本项目创建的，已保留')
         path.unlink()
 
@@ -118,7 +179,8 @@ def install(enable_autostart=True, hooks=True):
     state_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
     if hooks:
         register_hooks(shlex.join(args+['--hook']))
-    launcher = data_dir()/'applications'/DESKTOP_NAME
+    _install_icon()
+    launcher = _launcher_path()
     launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.write_text(desktop_text(args), encoding='utf-8')
     if enable_autostart:
@@ -132,7 +194,8 @@ def install(enable_autostart=True, hooks=True):
 def uninstall():
     register_hooks()
     set_autostart(False)
-    path = data_dir()/'applications'/DESKTOP_NAME
-    if path.exists() and 'X-GooglePiggy-Linux=true' in path.read_text(encoding='utf-8'):
+    path = _launcher_path()
+    if path.exists() and DESKTOP_MARKER in path.read_text(encoding='utf-8'):
         path.unlink()
+    _icon_path().unlink(missing_ok=True)
     print('已移除本项目的应用入口、自启动和 Hook；用户状态、备份和其他 Hook 均保留。')

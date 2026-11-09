@@ -3,6 +3,8 @@
 
 **需要 Xorg 会话。** 桌面终端运行 `echo "$XDG_SESSION_TYPE"` 应输出 `x11`；若为 `wayland`，请注销，在登录齿轮菜单选择 **Ubuntu on Xorg**。Wayland 暂不支持。
 
+修复更新后 GNOME 应用列表中小猪图标丢失的问题。
+
 ## 安装
 
 下载附件中的压缩包与 `SHA256SUMS.txt`，在下载目录执行：
