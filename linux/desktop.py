@@ -227,6 +227,10 @@ class HabitsDialog(QDialog):
             spin.valueChanged.connect(lambda value: self.edited())
             self.spins[key] = spin
             form.addRow(label, spin)
+        reset = QPushButton('恢复默认时间（5 秒 / 15 秒）')
+        reset.setAutoDefault(False)
+        reset.clicked.connect(self.reset)
+        form.addRow(reset)
         chance = pet.habits['snackChancePercent']
         self.snack_slider = QSlider(Qt.Orientation.Horizontal)
         self.snack_slider.setAccessibleName('偷吃概率')
@@ -243,10 +247,6 @@ class HabitsDialog(QDialog):
         row.addWidget(self.snack_reset)
         form.addRow('偷吃概率', row)
         self.snack_slider.valueChanged.connect(self.snack_edited)
-        reset = QPushButton('恢复默认时间（5 秒 / 15 秒）')
-        reset.setAutoDefault(False)
-        reset.clicked.connect(self.reset)
-        layout.addWidget(reset)
         self.status = QLabel('调整后请点击“保存”。')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
