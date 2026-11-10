@@ -4,9 +4,10 @@ import random
 
 
 class Leisure:
-    def __init__(self, now, rng=None, delays=None):
+    def __init__(self, now, rng=None, delays=None, snack_chance=50):
         self.rng = rng or random.Random()
         self.delays, self.busy, self.wake_grace = delays, False, False
+        self.snack_chance = snack_chance
         self.reset(now)
 
     def interval(self):
@@ -18,10 +19,14 @@ class Leisure:
 
     def reset(self, now, interval=None, choice=None):
         duration = (self.delays[0] if self.delays is not None else self.interval()) if interval is None else interval
-        choice = self.rng.random() if choice is None else choice
-        fractions = [2/3] if choice < .4 else [1/3] if choice < .8 else [1/3,2/3] if choice < .9 else []
         self.phase, self.began, self.deadline = 'awake', now, now+duration
-        self.snacks = [now+duration*f for f in fractions]
+        if self.delays is None:
+            choice = self.rng.random() if choice is None else choice
+            fractions = [2/3] if choice < .4 else [1/3] if choice < .8 else [1/3,2/3] if choice < .9 else []
+            self.snacks = [now+duration*f for f in fractions]
+        else:
+            # A fixed timer offers one snack draw at bedtime.
+            self.snacks = [self.deadline]
         self.sleep_epoch, self.tail_epoch, self.action_epoch = 0, None, now
         self.wake_grace = False
 
@@ -48,16 +53,23 @@ class Leisure:
             self.reset(now, interval=delays[1] if grace else None)
             self.wake_grace = grace
 
-    def tick(self, now, eligible, snack_duration=None):
+    def tick(self, now, eligible):
         if self.busy or self.deadline is None or self.phase != 'awake':
+            return
+        if self.delays is not None:
+            if eligible and now >= self.deadline:
+                if self.snacks and self.rng.random() < self.snack_chance/100:
+                    self.snacks.clear()
+                    self.phase, self.action_epoch = 'snacking', now
+                else:
+                    self.enter(now)
             return
         due = any(t <= now for t in self.snacks)
         self.snacks = [t for t in self.snacks if t > now]
         if eligible:
             if now >= self.deadline:
                 self.enter(now)
-            elif due and ((snack_duration is None and self.delays is None) or
-                          snack_duration is not None and now+snack_duration < self.deadline):
+            elif due:
                 self.phase, self.action_epoch = 'snacking', now
 
     def enter(self, now):
@@ -82,10 +94,13 @@ class Leisure:
     def position(self, clips, now):
         elapsed = now-self.action_epoch
         if self.phase == 'snacking':
-            if elapsed >= clips['snack'].total_duration/1000:
+            if elapsed < clips['snack'].total_duration/1000:
+                return 'snack', clips['snack'].frame(elapsed, True)
+            if self.delays is None:
                 self.phase = 'awake'
             else:
-                return 'snack', clips['snack'].frame(elapsed, True)
+                self.enter(now)
+                elapsed = 0
         if self.phase == 'entering':
             duration = clips['sleep_entry'].total_duration/1000
             if elapsed >= duration:

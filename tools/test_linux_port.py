@@ -613,18 +613,25 @@ class QtTests(unittest.TestCase):
         dialog=w.habits_dialog
         self.assertEqual(dialog.spins['idleSleepSeconds'].value(),5)
         self.assertEqual(dialog.spins['wakeAwakeSeconds'].value(),15)
+        self.assertEqual(dialog.snack_slider.value(),50)
         dialog.spins['idleSleepSeconds'].setValue(9)
         dialog.spins['wakeAwakeSeconds'].setValue(28)
+        dialog.snack_slider.setValue(72)
         self.assertEqual(w.leisure.delays,(5,15))
+        self.assertEqual(w.leisure.snack_chance,50)
         self.assertNotIn('idleSleepSeconds',json.loads((self.root/'settings.json').read_text()))
+        self.assertNotIn('snackChancePercent',json.loads((self.root/'settings.json').read_text()))
         self.assertIn('尚未保存',dialog.status.text())
         QTest.mouseClick(dialog.save_button,Qt.MouseButton.LeftButton)
         settings=json.loads((self.root/'settings.json').read_text())
         self.assertEqual(settings['approvalMode'],'codex')
         self.assertEqual(settings['keep'],'user value')
         self.assertEqual(w.leisure.delays,(9,28))
+        self.assertEqual(settings['snackChancePercent'],72)
+        self.assertEqual(w.leisure.snack_chance,72)
         self.assertIn('已保存并生效',dialog.status.text())
         dialog.spins['wakeAwakeSeconds'].setValue(99)
+        dialog.snack_slider.setValue(12)
         QTest.keyClick(dialog,Qt.Key.Key_Escape)
         self.assertIsNone(w.habits_dialog)
         self.assertEqual(w.leisure.delays,(9,28))
@@ -633,6 +640,14 @@ class QtTests(unittest.TestCase):
         try:
             self.assertEqual(reopened.leisure.delays,(9,28))
             reopened.show_habits()
+            self.assertEqual(reopened.habits_dialog.snack_slider.value(),72)
+            QTest.mouseClick(reopened.habits_dialog.snack_reset,Qt.MouseButton.LeftButton)
+            self.assertEqual(reopened.habits_dialog.snack_slider.value(),50)
+            self.assertEqual(reopened.habits_dialog.spins['idleSleepSeconds'].value(),9)
+            self.assertEqual(reopened.leisure.snack_chance,72)
+            QTest.mouseClick(reopened.habits_dialog.save_button,Qt.MouseButton.LeftButton)
+            self.assertEqual(reopened.leisure.delays,(9,28))
+            self.assertEqual(reopened.leisure.snack_chance,50)
             reopened.habits_dialog.reset()
             self.assertEqual(reopened.leisure.delays,(9,28))
             QTest.mouseClick(reopened.habits_dialog.save_button,Qt.MouseButton.LeftButton)
@@ -654,6 +669,7 @@ class QtTests(unittest.TestCase):
 
     def test_global_sleep_waits_for_both_tasks_and_compaction(self):
         w=self.window
+        w.leisure.snack_chance=0
         self.dispatch('UserPromptSubmit','A')
         self.dispatch('UserPromptSubmit','B')
         self.dispatch('Stop','A')
@@ -671,8 +687,26 @@ class QtTests(unittest.TestCase):
         w.now=deadline;w.resolve_visual()
         self.assertEqual(w.position[0],'sleep_entry')
 
+    def test_snack_waits_for_celebration_and_yields_to_new_work(self):
+        w = self.window
+        w.leisure.set_delays((1,15), w.now)
+        w.leisure.snack_chance = 100
+        self.dispatch('UserPromptSubmit')
+        self.dispatch('Stop')
+        w.now = w.leisure.deadline
+        w.resolve_visual()
+        self.assertEqual(w.position[0], 'jump')
+        self.assertEqual(w.leisure.phase, 'awake')
+        w.now += w.animations['jump'].total_duration/1000
+        w.resolve_visual()
+        self.assertEqual(w.position[0], 'snack')
+        self.dispatch('UserPromptSubmit', 'B')
+        self.assertEqual(w.position[0], 'reading')
+        self.assertEqual(w.leisure.phase, 'awake')
+
     def test_sleep_waits_for_initial_observation_and_open_menus(self):
         w=self.window
+        w.leisure.snack_chance=0
         w.observer.ready=False
         w.now += 10000
         w.resolve_visual()
@@ -699,6 +733,7 @@ class QtTests(unittest.TestCase):
 
     def test_rest_menu_enters_sleep_and_codex_work_wakes_it(self):
         w = self.window
+        w.leisure.snack_chance = 100
         self.menu_state('休息模式')
         w.resolve_visual()
         self.assertEqual(w.position[0], 'sleep_entry')

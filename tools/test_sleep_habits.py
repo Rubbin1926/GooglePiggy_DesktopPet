@@ -4,6 +4,7 @@ import json
 import tempfile
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
@@ -14,7 +15,7 @@ from leisure import Leisure
 
 class SleepHabitsTests(unittest.TestCase):
     def test_long_work_does_not_spend_the_idle_delay(self):
-        rest=Leisure(0,delays=(5,15))
+        rest=Leisure(0,delays=(5,15),snack_chance=0)
         rest.set_busy(True,1)
         rest.tick(10000,True)
         self.assertEqual(rest.phase,'awake')
@@ -55,7 +56,7 @@ class SleepHabitsTests(unittest.TestCase):
         self.assertFalse(store.pending_work())
 
     def test_new_work_cancels_the_entire_quiet_period(self):
-        rest=Leisure(0,delays=(5,15))
+        rest=Leisure(0,delays=(5,15),snack_chance=0)
         rest.tick(4.9,True)
         self.assertEqual(rest.phase,'awake')
         rest.set_busy(True,4.9)
@@ -76,7 +77,9 @@ class SleepHabitsTests(unittest.TestCase):
 
     def test_manual_wake_starts_its_own_delay_after_the_animation(self):
         clips=load_manifest(Path(__file__).resolve().parents[1]/'assets/macos-resources')
-        rest=Leisure(0,delays=(5,15))
+        rng=Mock()
+        rng.random.return_value=.25
+        rest=Leisure(0,rng=rng,delays=(5,15))
         rest.enter(0)
         rest.position(clips,7)
         self.assertTrue(rest.click(8,wake=True))
@@ -85,8 +88,10 @@ class SleepHabitsTests(unittest.TestCase):
         self.assertAlmostEqual(rest.deadline,woke+15)
         rest.tick(woke+14.99,True)
         self.assertEqual(rest.phase,'awake')
+        rng.random.assert_not_called()
         rest.tick(woke+15,True)
-        self.assertEqual(rest.phase,'entering')
+        self.assertEqual(rest.phase,'snacking')
+        rng.random.assert_called_once()
 
     def test_delay_changes_apply_and_do_not_override_work(self):
         rest=Leisure(0,delays=(5,15))
@@ -120,17 +125,40 @@ class SleepHabitsTests(unittest.TestCase):
             root=Path(tmp)
             path=root/'settings.json'
             path.write_text(json.dumps({'idleSleepSeconds':0,'wakeAwakeSeconds':True}))
-            self.assertEqual(habits_settings(root),{'idleSleepSeconds':1,'wakeAwakeSeconds':15})
+            self.assertEqual(habits_settings(root),{'idleSleepSeconds':1,'wakeAwakeSeconds':15,'snackChancePercent':50})
+            for saved, chance in ((-1,0),(101,100),(True,50),('25',50)):
+                path.write_text(json.dumps({'snackChancePercent':saved}))
+                self.assertEqual(habits_settings(root)['snackChancePercent'],chance)
             path.write_text('not json')
-            self.assertEqual(habits_settings(root),{'idleSleepSeconds':5,'wakeAwakeSeconds':15})
+            self.assertEqual(habits_settings(root),{'idleSleepSeconds':5,'wakeAwakeSeconds':15,'snackChancePercent':50})
 
-    def test_snacking_only_starts_when_the_whole_clip_fits(self):
-        rest=Leisure(0,delays=(5,15))
-        rest.snacks=[1]
-        rest.tick(1,True,snack_duration=12.6)
-        self.assertEqual(rest.phase,'awake')
-        rest.tick(5,True,snack_duration=12.6)
-        self.assertEqual(rest.phase,'entering')
+    def test_automatic_snack_plays_in_full_and_then_enters_sleep(self):
+        clips = load_manifest(Path(__file__).resolve().parents[1]/'assets/macos-resources')
+        rng = Mock()
+        rng.random.return_value = .49
+        rest = Leisure(0, rng=rng, delays=(5,15))
+        rest.tick(4.99, True)
+        rest.tick(5, False)
+        rng.random.assert_not_called()
+        rest.tick(6, True)
+        end = 6+clips['snack'].total_duration/1000
+        self.assertEqual(rest.position(clips, end-.01)[0], 'snack')
+        rest.tick(end, True)
+        self.assertEqual(rest.position(clips, end), ('sleep_entry', 0))
+        rng.random.assert_called_once()
+
+    def test_sleep_decision_uses_the_configured_percentage_once(self):
+        for chance, draw, phase in ((0, 0, 'entering'), (50, .5, 'entering'), (100, .99, 'snacking')):
+            with self.subTest(chance=chance):
+                rng = Mock()
+                rng.random.return_value = draw
+                rest = Leisure(0, rng=rng, delays=(5,15), snack_chance=chance)
+                rest.tick(5, True)
+                self.assertEqual(rest.phase, phase)
+                rest.cancel()
+                rest.tick(6, True)
+                self.assertEqual(rest.phase, 'entering')
+                rng.random.assert_called_once()
 
 
 if __name__=='__main__':

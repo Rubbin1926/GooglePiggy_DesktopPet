@@ -5,8 +5,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-HABIT_DEFAULTS = {'idleSleepSeconds': 5, 'wakeAwakeSeconds': 15}
-HABIT_LIMITS = (1, 3600)
+HABIT_DEFAULTS = {'idleSleepSeconds': 5, 'wakeAwakeSeconds': 15, 'snackChancePercent': 50}
+HABIT_LIMITS = {'idleSleepSeconds': (1, 3600), 'wakeAwakeSeconds': (1, 3600), 'snackChancePercent': (0, 100)}
 
 
 def app_root():
@@ -59,8 +59,12 @@ def approval_mode(directory=None):
 def habits_settings(directory=None):
     values = read_json(Path(directory or state_dir())/'settings.json')
     values = values if isinstance(values, dict) else {}
-    return {key: min(HABIT_LIMITS[1], max(HABIT_LIMITS[0], values[key]))
-            if type(values.get(key)) is int else default for key, default in HABIT_DEFAULTS.items()}
+    habits = HABIT_DEFAULTS.copy()
+    for key, (low, high) in HABIT_LIMITS.items():
+        value = values.get(key)
+        if type(value) is int:
+            habits[key] = min(high, max(low, value))
+    return habits
 
 
 def utc_now():

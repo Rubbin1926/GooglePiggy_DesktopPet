@@ -142,7 +142,7 @@ def run(executable, report, platform):
                                              and h.get('pid') != process.pid else None))
                 checks['launch_from_desktop_entry'] = restored['platform'] == platform
                 checks['settings_after_reinstall'] = (restored['approval_mode'] == 'codex'
-                    and restored['habits'] == {'idleSleepSeconds': 7, 'wakeAwakeSeconds': 17}
+                    and restored['habits'] == {'idleSleepSeconds': 7, 'wakeAwakeSeconds': 17, 'snackChancePercent': 50}
                     and all(restored['appearance'][key] == value for key, value in appearance.items()))
             finally:
                 stop_heartbeat_process(state, installed/'googlepiggy')

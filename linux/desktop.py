@@ -219,15 +219,31 @@ class HabitsDialog(QDialog):
         layout.addWidget(title)
         form = QFormLayout()
         layout.addLayout(form)
-        for key, label in [('idleSleepSeconds', '忙完后多久开睡'), ('wakeAwakeSeconds', '被叫醒后精神多久')]:
+        for key, label in [('idleSleepSeconds', '忙完后多久休息'), ('wakeAwakeSeconds', '被叫醒后精神多久')]:
             spin = QSpinBox()
-            spin.setRange(*HABIT_LIMITS)
+            spin.setRange(*HABIT_LIMITS[key])
             spin.setSuffix(' 秒')
             spin.setValue(pet.habits[key])
             spin.valueChanged.connect(lambda value: self.edited())
             self.spins[key] = spin
             form.addRow(label, spin)
-        reset = QPushButton('恢复默认习性（5 秒 / 15 秒）')
+        chance = pet.habits['snackChancePercent']
+        self.snack_slider = QSlider(Qt.Orientation.Horizontal)
+        self.snack_slider.setAccessibleName('偷吃概率')
+        self.snack_slider.setRange(*HABIT_LIMITS['snackChancePercent'])
+        self.snack_slider.setValue(chance)
+        self.snack_value = QLabel(f'{chance}%')
+        self.snack_value.setMinimumWidth(44)
+        self.snack_reset = QPushButton('恢复默认（50%）')
+        self.snack_reset.setAutoDefault(False)
+        self.snack_reset.clicked.connect(lambda: self.snack_slider.setValue(HABIT_DEFAULTS['snackChancePercent']))
+        row = QHBoxLayout()
+        row.addWidget(self.snack_slider, 1)
+        row.addWidget(self.snack_value)
+        row.addWidget(self.snack_reset)
+        form.addRow('偷吃概率', row)
+        self.snack_slider.valueChanged.connect(self.snack_edited)
+        reset = QPushButton('恢复默认时间（5 秒 / 15 秒）')
         reset.setAutoDefault(False)
         reset.clicked.connect(self.reset)
         layout.addWidget(reset)
@@ -248,10 +264,15 @@ class HabitsDialog(QDialog):
         self.status.setText('尚未保存；实际运行仍使用之前的设置。')
         self.status.setStyleSheet('color:#8d681e')
 
+    def snack_edited(self, value):
+        self.snack_value.setText(f'{value}%')
+        self.edited()
+
     def save(self):
         for spin in self.spins.values():
             spin.interpretText()
         changes = {key: spin.value() for key, spin in self.spins.items()}
+        changes['snackChancePercent'] = self.snack_slider.value()
         try:
             self.pet.set_habits(changes)
         except OSError as error:
@@ -259,8 +280,7 @@ class HabitsDialog(QDialog):
             self.status.setStyleSheet('color:#a83b3b')
             QMessageBox.warning(self, '小猪习性', str(error))
             return
-        self.status.setText('已保存并生效：忙完后 '+str(self.pet.habits['idleSleepSeconds'])+
-                            ' 秒开睡，叫醒后清醒 '+str(self.pet.habits['wakeAwakeSeconds'])+' 秒。')
+        self.status.setText('已保存并生效。')
         self.status.setStyleSheet('color:#34734a')
 
     def reset(self):
@@ -293,7 +313,8 @@ class PetWindow(QWidget):
         self.clock = AnimationClock(self.animations)
         self.now, self.wall = time.monotonic(), time.time()
         self.habits = habits_settings(directory)
-        self.leisure = Leisure(self.now, delays=(self.habits['idleSleepSeconds'], self.habits['wakeAwakeSeconds']))
+        self.leisure = Leisure(self.now, delays=(self.habits['idleSleepSeconds'], self.habits['wakeAwakeSeconds']),
+                               snack_chance=self.habits['snackChancePercent'])
         self.appearance = Appearance(directory/'appearance.json')
         self.approval_mode = approval_mode(directory)
         self.renderer = Renderer(resource_root(), self.animations)
@@ -394,12 +415,14 @@ class PetWindow(QWidget):
     def set_habits(self, changes):
         values = read_json(self.directory/'settings.json')
         values = values if isinstance(values, dict) else {}
+        values.update(self.habits)
         values.update({key: changes[key] for key in HABIT_DEFAULTS if key in changes})
         atomic_json(self.directory/'settings.json', values)
         stored = read_json(self.directory/'settings.json')
         if not isinstance(stored, dict) or any(type(stored.get(key)) is not int or stored[key] != values[key] for key in HABIT_DEFAULTS):
             raise OSError('未能确认设置保存成功，请重试。')
         self.habits = {key: stored[key] for key in HABIT_DEFAULTS}
+        self.leisure.snack_chance = self.habits['snackChancePercent']
         self.leisure.set_delays((self.habits['idleSleepSeconds'], self.habits['wakeAwakeSeconds']), self.now)
         self.dirty = True
 
@@ -552,8 +575,7 @@ class PetWindow(QWidget):
         if self.leisure_block_reason():
             self.leisure.cancel()
         else:
-            self.leisure.tick(self.now, not self.mouse_down and not self.hidden_edge and not self.menu_open,
-                              self.animations['snack'].total_duration/1000)
+            self.leisure.tick(self.now, not self.mouse_down and not self.hidden_edge and not self.menu_open)
             position = self.leisure.position(self.animations, self.now)
         self.position = position or ('idle', self.animations['idle'].frame(self.now-self.idle_epoch))
 
