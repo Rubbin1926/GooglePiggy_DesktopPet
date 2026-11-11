@@ -244,6 +244,38 @@ class HookTests(unittest.TestCase):
             self.assertFalse(observer.store.nodes['child'].active)
             self.assertEqual(observer.store.nodes['child'].parent, 'A')
 
+    def test_unattached_background_hooks_do_not_appear_in_the_task_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transcript = root/'chat.jsonl'
+            transcript.touch()
+            def event(name, session, path=None, **fields):
+                handle({'hook_event_name': name, 'session_id': session, 'turn_id': 'turn',
+                        'transcript_path': path, **fields}, root)
+            event('SessionStart', 'chat', str(transcript))
+            event('UserPromptSubmit', 'chat', str(transcript), prompt='整理项目文件')
+            event('SessionStart', 'background')
+            event('UserPromptSubmit', 'background', prompt='后台处理')
+            event('PreToolUse', 'background')
+            event('SubagentStart', 'background', agent_id='background-child')
+            event('SubagentStart', 'chat', agent_id='chat-child')
+
+            store = FamilyStore()
+            observer = CodexObserver(store, root, home=root, enabled=False)
+            observer.poll()
+            self.assertEqual([node.id for node in store.roots(time.time())], ['chat'])
+            self.assertEqual(store.nodes['chat'].status, 'thinking')
+            self.assertEqual(store.nodes['chat'].title, '整理项目文件')
+            self.assertEqual(store.nodes['chat-child'].parent, 'chat')
+
+            event('PreToolUse', 'chat')
+            other_transcript = root/'other.jsonl'
+            other_transcript.touch()
+            event('PreToolUse', 'background', str(other_transcript))
+            observer.poll()
+            self.assertEqual(store.nodes['chat'].status, 'working')
+            self.assertEqual(store.nodes['background'].title, '未命名对话')
+
     def test_no_live_window_returns_native_permission_flow(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

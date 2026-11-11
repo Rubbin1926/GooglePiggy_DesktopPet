@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 ACTIVE = {'thinking','working','compacting','permission','interrupted'}
 BEGINS = {'UserPromptSubmit','SubagentStart','PreCompact','ResumeDetected'}
+UNTITLED_CHAT = '未命名对话'
 EVENT_STATUS = {'SessionStart':'idle','UserPromptSubmit':'thinking','PreToolUse':'working',
     'PostToolUse':'working','Stop':'success','TaskCompleteFallback':'success','Interrupt':'interrupted',
     'PreCompact':'compacting','PostCompact':'thinking','SubagentStart':'working',
@@ -13,7 +14,7 @@ EVENT_STATUS = {'SessionStart':'idle','UserPromptSubmit':'thinking','PreToolUse'
 class Node:
     id: str
     parent: str = ''
-    title: str = ''
+    title: str = UNTITLED_CHAT
     turn: str = ''
     retired: set = field(default_factory=set)
     active: bool = False
@@ -49,10 +50,10 @@ class FamilyStore:
             self.seen.add(token)
         actor, event, turn = agent or session, p.get('event',''), p.get('turn_id','')
         parent = session if agent else p.get('parent_thread_id','')
-        node = self.nodes.setdefault(actor, Node(actor, parent, p.get('thread_title') or p.get('prompt_preview') or '线程 '+actor[:8], created=now))
+        node = self.nodes.setdefault(actor, Node(actor, parent, created=now))
         if parent and parent != actor:
             node.parent = parent
-            self.nodes.setdefault(parent, Node(parent, title='线程 '+parent[:8], created=now))
+            self.nodes.setdefault(parent, Node(parent, created=now))
         begins = event in BEGINS
         if turn and turn in node.retired:
             return False
@@ -96,6 +97,9 @@ class FamilyStore:
             node.turn_started = now
         if status != node.status or begins:
             node.changed = now
+        title = p.get('thread_title') or (p.get('prompt_preview') if node.title == UNTITLED_CHAT else None)
+        if title:
+            node.title = title
         node.status, node.last_event, node.payload = status, now, p
         node.active = status in ACTIVE
         if event in {'Stop','SubagentStop','TaskCompleteFallback','SessionEnd'} or event == 'PostCompact' and not node.compaction_resume:

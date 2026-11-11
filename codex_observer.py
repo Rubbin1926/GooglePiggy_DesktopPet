@@ -269,6 +269,10 @@ class CodexObserver:
     def ingest(self, value):
         p = dict(value)
         actor = p.get('agent_id') or p.get('session_id')
+        meta = self.metadata.get(actor,{})
+        node = self.store.nodes.get(actor)
+        parent = (p.get('session_id') if p.get('agent_id') else
+                  p.get('parent_thread_id') or meta.get('parent_thread_id') or getattr(node,'parent',''))
         preview = str(p.get('prompt_preview') or '').replace('\r\n', '\n')
         safety_request = (p.get('source') == 'codex-hook' and p.get('cwd') == '/' and
             preview.startswith('You are an expert at upholding safety and compliance standards for Codex ambient suggestions.\n\n'))
@@ -278,21 +282,26 @@ class CodexObserver:
         # both the exact instruction header and directory, never a title alone.
         cwd = str(p.get('cwd') or '').replace('\\', '/').rstrip('/')
         memory_dir = str(self.home / 'memories').replace('\\', '/').rstrip('/')
-        memory_request = (preview.replace('\r\n', '\n').startswith(
-            '## Memory Writing Agent: Phase 2 (Consolidation)\nYou are a Memory Writing Agent.') and
+        heading, _, body = preview.partition('\n')
+        memory_request = (heading == '## Memory Writing Agent: Phase 2 (Consolidation)' and
+            body.lstrip().startswith('You are a Memory Writing Agent.') and
             (cwd.casefold() == memory_dir.casefold() or cwd.casefold().endswith('/.codex/memories')))
         # Suggestions/titles must be unregistered. Memory consolidation can have
         # a metadata row, but requires both the exact prompt and dedicated cwd.
         # Preserve explicit and metadata-derived child relationships.
         if (actor and p.get('event') == 'UserPromptSubmit' and (actor not in self.metadata or memory_request) and
-            not p.get('agent_id') and not p.get('parent_thread_id') and
-            not self.metadata.get(actor, {}).get('parent_thread_id') and
-            not getattr(self.store.nodes.get(actor), 'parent', '') and
+            not parent and
             (memory_request or title_request or safety_request or preview.startswith(INTERNAL_PROMPT_PREFIXES))):
             self._hide_internal(actor)  # SessionStart may already exist.
-        if actor in self.internal_sessions:
+        if actor in self.internal_sessions or parent in self.internal_sessions:
             return False
-        meta = self.metadata.get(actor,{})
+        if p.get('source') == 'googlepiggy-linux' and p.get('transcript_path', '') is None:
+            # Standalone hooks with no transcript or known chat include Codex's
+            # background jobs. A later event with chat metadata can still qualify.
+            parent_node = self.store.nodes.get(parent)
+            if (actor not in self.metadata and parent not in self.metadata and
+                not (node and node.rollout) and not (parent_node and parent_node.rollout)):
+                return False
         for key in ('thread_title','parent_thread_id'):
             if meta.get(key):
                 p[key] = meta[key]

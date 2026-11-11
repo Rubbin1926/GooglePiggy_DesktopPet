@@ -19,7 +19,7 @@ class MemoryFilterTests(unittest.TestCase):
             for i, event in enumerate(('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse')):
                 (events / f'{i}.json').write_text(json.dumps(dict(session_id='internal', event=event,
                     cwd=r'C:\Users\fixture\.codex\memories', received_at=100+i,
-                    prompt_preview=MARKER if event == 'UserPromptSubmit' else '')))
+                    prompt_preview=MARKER.replace('\n', '\n\n') if event == 'UserPromptSubmit' else '')))
             for _ in range(2):
                 store = FamilyStore()
                 observer = CodexObserver(store, root, home=root, enabled=False)
