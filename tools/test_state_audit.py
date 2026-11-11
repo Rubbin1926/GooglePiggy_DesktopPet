@@ -7,9 +7,11 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import zstandard
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from codex_observer import CodexObserver,latest_lifecycle
+from codex_bridge import atomic_json
+from codex_observer import CodexObserver,ObserverReader,latest_lifecycle
 from family_store import FamilyStore
 
 
@@ -19,6 +21,39 @@ def record(kind,seconds=130,turn='t'):
 
 
 class StateAuditTests(unittest.TestCase):
+    def test_event_reader_skips_unchanged_directory_and_retries_incomplete_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            events = root/'family-events'
+            reader = ObserverReader(root, root)
+            try:
+                request = dict(nodes={}, versions={}, seen=frozenset())
+                self.assertEqual(reader._read(request)['pending'], [])
+                first = {'session_id': 'first'}
+                atomic_json(events/'002.json', first)
+                mtime = events.stat().st_mtime_ns
+                with patch('codex_observer.time.time_ns', return_value=mtime):
+                    self.assertEqual(reader._read(request)['pending'], [('002.json', first)])
+                request['seen'] = frozenset({'002.json'})
+
+                late_file = events/'001.json'
+                late_file.write_text('{', encoding='utf-8')
+                os.utime(events, ns=(events.stat().st_atime_ns, mtime))
+                with patch('codex_observer.time.time_ns', return_value=mtime+1_000_000_000):
+                    self.assertEqual(reader._read(request)['pending'], [])
+                    late = {'session_id': 'late'}
+                    late_file.write_text(json.dumps(late), encoding='utf-8')
+                    with patch.object(Path, 'glob', autospec=True, side_effect=Path.glob) as glob, \
+                         patch.object(Path, 'iterdir', autospec=True, side_effect=Path.iterdir) as iterdir:
+                        self.assertEqual(reader._read(request)['pending'], [('001.json', late)])
+                        request['seen'] = frozenset({'001.json', '002.json'})
+                        self.assertEqual(reader._read(request)['pending'], [])
+                scanned = [call.args[0] for call in glob.call_args_list + iterdir.call_args_list]
+                self.assertNotIn(events, scanned)
+            finally:
+                reader.close()
+                reader.thread.join(1)
+
     def test_empty_plain_file_does_not_mask_archive(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'r.jsonl';path.touch()

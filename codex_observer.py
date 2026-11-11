@@ -380,6 +380,8 @@ class ObserverReader:
         self.pending = False
         self.closed = threading.Event()
         self.last_error = None
+        self.event_directory_stamp = None
+        self.pending_event_paths = []
         self.thread = threading.Thread(target=self._run,name='pig-observer-io',daemon=True)
         self.thread.start()
 
@@ -420,10 +422,28 @@ class ObserverReader:
     def _read(self, request):
         nodes = request['nodes']
         reader, now = self.reader,time.time()
+        directory = reader.state_dir/'family-events'
+        seen = request['seen']
+        try:
+            # Sample before listing so concurrent publishes trigger another scan.
+            info = directory.stat()
+            stamp = (info.st_dev, info.st_ino, info.st_mtime_ns)
+            if stamp != self.event_directory_stamp:
+                # Entries created within a filesystem clock tick can share an mtime.
+                settled = time.time_ns() - info.st_mtime_ns >= 100_000_000
+                self.pending_event_paths = sorted(
+                    file for file in directory.iterdir()
+                    if file.name not in seen and file.match('*.json'))
+                self.event_directory_stamp = stamp if settled else None
+            else:
+                # Retry paths until the UI acknowledges them, even without a directory change.
+                self.pending_event_paths = [file for file in self.pending_event_paths if file.name not in seen]
+        except OSError:
+            self.event_directory_stamp = None
+            self.pending_event_paths = []
+
         pending = []
-        for file in sorted((reader.state_dir/'family-events').glob('*.json')):
-            if file.name in request['seen']:
-                continue
+        for file in self.pending_event_paths:
             try:
                 payload = json.loads(file.read_text(encoding='utf-8-sig'))
                 if isinstance(payload,dict): pending.append((file.name,payload))
