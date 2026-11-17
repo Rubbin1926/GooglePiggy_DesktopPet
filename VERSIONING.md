@@ -57,8 +57,13 @@ Windows 平台补丁构建20261025.1-system-startup，修复登记缺少系统�
 ## Windows 0.5.9 边缘隐藏与启动位置修复
 
 Windows 平台补丁版本 `v0.5.9-windows`，构建 `20261103.3-edge-startup-release`，合并禁止底边隐藏与保存缩放设置后的启动坐标修复。Mac 保持 0.5.6，保留其运行时、标签、附件和更新通道。物理多屏尚未实测，不将启动坐标修复描述为完整扩展屏兼容保证。
+
+## Windows 0.5.10 任务记录读取优化
+
+Windows 平台补丁版本 `v0.5.10-windows`，构建 `20261112.1-event-discovery-release`。后台通过 Windows 文件变更通知发现新任务记录，保留启动恢复、读失败重试和定期补查。对应 macOS 正式版本为 0.5.7。
+
 # 本 Fork 的 Linux 发布
 
 Linux 使用独立的 `v版本-linux` 标签与 `GooglePiggy-版本-linux-x86_64.tar.gz` 包，更新源为本 Fork。
-首个 `v0.5.9-linux` 标为预发布，供 Ubuntu 22.04 / X11 使用反馈；自动更新仅识别正式 Linux 发布。
+当前 `v0.5.9-linux` 为预发布，支持 Ubuntu 22.04 / 24.04 LTS Desktop 的 GNOME Xorg 会话。自动更新仅识别正式 Linux 发布。
 Windows / macOS 的既有发布工作流已排除 Linux 标签。
