@@ -600,7 +600,9 @@ class PetWindow(QWidget):
                 self.fit_next_frame = False
                 self.fit_visible()
             self.place()
-            self.input_shape.apply(self, image)
+            # Qt holds a mouse grab until release, when the next paint updates the shape.
+            if not self.dragging:
+                self.input_shape.apply(self, image)
             self.update()
             self.frames_rendered += 1
         elif not self.hidden:
@@ -755,6 +757,7 @@ class PetWindow(QWidget):
         if not self.dragging and delta.manhattanLength() > 5:
             self.dragging = True
             self.visual_epoch = self.now
+            self.dirty = True
             if self.leisure.phase == 'sleeping':
                 self.leisure.wake(self.now)
             else:
@@ -764,7 +767,6 @@ class PetWindow(QWidget):
             if abs(proposed.x()-self.anchor.x()) >= 2:
                 self.drag_direction = 1 if proposed.x() > self.anchor.x() else -1
             self.anchor = proposed
-            self.dirty = True
             self.place()
 
     def mouseReleaseEvent(self, event):
@@ -942,11 +944,16 @@ class PetWindow(QWidget):
                 kind, value, error = self.updater.results.get_nowait()
             except queue.Empty:
                 break
-            if kind == 'check':
+            if kind in {'check', 'manual-check'}:
                 self.updater.checking = False
                 manual, self.updater.manual = self.updater.manual, False
-                if manual or value:
-                    self.notice = UpdateNotice(value, error)
+                if manual and kind == 'check':
+                    self.updater.check(manual=True)
+                    continue
+                if manual or value and value.release:
+                    release, message = (value.release, value.message) if value else (None, '')
+                    self.notice = UpdateNotice(release, error, message=message,
+                                               manual_install=not getattr(sys, 'frozen', False))
                     self.fit_next_frame = True
                     if self.hidden_edge and not self.hidden_family:
                         self.reveal()
@@ -974,7 +981,7 @@ class PetWindow(QWidget):
             self.updater.cancel.set()
         elif action == 'update' and self.notice.release:
             if not getattr(sys, 'frozen', False):
-                self.notice.error = '系统 Python 版请通过 Git 或 Releases 更新，再运行 setup-linux.sh。'
+                self.notice.error = None if self.open_url(self.notice.release.url) else '无法打开发布页面'
             else:
                 self.notice.error, self.notice.phase = None, 'downloading'
                 self.updater.download(self.notice.release)

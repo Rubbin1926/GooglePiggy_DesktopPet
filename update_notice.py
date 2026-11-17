@@ -6,9 +6,10 @@ from PIL import Image, ImageDraw, ImageFilter
 
 
 class UpdateNotice:
-    def __init__(self, release=None, error=None):
+    def __init__(self, release=None, error=None, *, message='', manual_install=False):
         self.release, self.error = release, error
-        self.phase = 'available' if release else 'failed' if error else 'current'
+        self.message, self.manual_install = message, manual_install
+        self.phase = 'available' if release else 'failed' if error else 'checked' if message else 'current'
         self.progress = None
         self.started = time.monotonic()
 
@@ -42,7 +43,7 @@ class UpdateNotice:
         draw.text((left+20,top+16),'猪猪桌宠 · 软件更新',font=font(11),fill=rose)
         progress = self.phase in {'downloading','verifying','ready','installing'}
         if self.release:
-            title = '更新未完成' if self.error else f'正在更新到 {self.release.version}' if progress else f'检测到有新版本 {self.release.version}'
+            title = '更新未完成' if self.error else f'正在更新到 {self.release.version}' if progress else self.message or f'检测到有新版本 {self.release.version}'
             draw.text((left+20,top+43),title,font=font(17,True),fill=ink)
             messages = {'downloading':'正在下载…'+(f' {self.progress:.0%}' if self.progress is not None else ''),
                         'verifying':'正在校验更新包，请稍候…','ready':'已准备好；正在等待权限处理或拖动结束。',
@@ -58,10 +59,12 @@ class UpdateNotice:
                 offset = 0 if self.progress is not None or reduced else (math.sin(elapsed*2)+1)/2*(304-width)
                 draw.rounded_rectangle((x+offset,y,x+offset+width,y+6),3,fill=green)
             label = '完成后自动重启，设置和任务数据会保留。' if progress else f'是否选择更新版本：{current} → {self.release.version}'
+            if self.manual_install:
+                label = '打开发布页下载并安装。'
             draw.text((left+20,top+146),label,font=font(12),fill=ink)
         else:
-            title = '暂时无法检查更新，请稍后重试' if self.error else '当前已是最新版本啦！'
-            draw.text((left+20,top+47),title,font=font(15 if self.error else 17,True),fill=ink)
+            title = '暂时无法检查更新，请稍后重试' if self.error else self.message or '当前已是最新版本啦！'
+            draw.text((left+20,top+47),title,font=font(15 if self.error or self.message else 17,True),fill=ink)
         for action,rect in self.buttons.items():
             primary = action=='update' or not self.release
             button_layer = Image.new('RGBA', canvas.size)
@@ -72,6 +75,8 @@ class UpdateNotice:
             canvas.alpha_composite(button_layer)
             draw = ImageDraw.Draw(canvas)
             label = '取消下载' if action=='cancel' else ('重试' if self.error else '更新') if action=='update' else '稍后再说' if self.release else '收到！'
+            if action == 'update' and self.manual_install:
+                label = '打开发布页'
             text_color = 'white' if primary else '#4a3b40'
             if appearance:
                 text_color = appearance.color('buttonTextColor', text_color)

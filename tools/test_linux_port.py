@@ -25,7 +25,7 @@ from linux.geometry import Screen, fit_delta, tail_rects, tail_safe_screen, touc
 from linux.hook import handle, heartbeat_fresh, permission_summary
 from linux.integration import merge_hooks, install, uninstall
 from linux.paths import utc_now
-from linux.update import MANIFEST, WEB, digest, extract_package, parse_releases, validate_tree
+from linux.update import API, MANIFEST, WEB, Release, UpdateCheck, check_releases, digest, extract_package, parse_releases, validate_tree
 from linux.update_helper import install_transaction
 from linux.x11 import alpha_rectangles
 
@@ -493,6 +493,53 @@ class UpdateTests(unittest.TestCase):
         row['tag_name'] = 'v0.5.10-windows'
         self.assertEqual(parse_releases([row]), [])
 
+    def test_manual_check_distinguishes_previews_and_same_version_builds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = package(Path(tmp)/'installed')
+            tag, name = 'v0.5.9-linux', 'GooglePiggy-0.5.9-linux-x86_64.tar.gz'
+            base = WEB+'download/'+tag+'/'
+            checksum = Path(tmp)/'SHA256SUMS.txt'
+            archive_line = 'a'*64+'  '+name+'\n'
+            checksum.write_text(archive_line+f'# {MANIFEST} SHA-256 {digest(root/MANIFEST)}\n', encoding='ascii')
+            checksum_asset = {'name': checksum.name, 'browser_download_url': base+checksum.name}
+            row = {'draft': False, 'prerelease': True, 'tag_name': tag, 'html_url': WEB+'tag/'+tag,
+                   'assets': [{'name': name, 'browser_download_url': base+name,
+                               'size': 123, 'digest': 'sha256:'+'a'*64}, checksum_asset]}
+
+            def response(request, **kwargs):
+                if request.full_url.startswith(API+'?'):
+                    checksum_asset.update(size=checksum.stat().st_size, digest='sha256:'+digest(checksum))
+                    return io.BytesIO(json.dumps([row]).encode())
+                self.assertEqual(request.full_url, base+checksum.name)
+                return io.BytesIO(checksum.read_bytes())
+
+            with patch('linux.update.urlopen', side_effect=response):
+                self.assertIsNone(check_releases('0.5.8').release)
+                self.assertEqual(check_releases('0.5.8', manual=True, root=root).release.version, '0.5.9')
+                (root/'.venv').mkdir()
+                (root/'.venv/pyvenv.cfg').touch()
+                self.assertEqual(check_releases('0.5.9', manual=True, root=root).message, '当前安装包已是最新')
+
+                (root/'googlepiggy').write_bytes(b'modified after installation')
+                self.assertEqual(check_releases('0.5.9', manual=True, root=root).message, '无法核对当前安装包')
+                (root/MANIFEST).write_text('{}', encoding='ascii')
+                self.assertEqual(check_releases('0.5.9', manual=True, root=root).release.version, '0.5.9')
+
+                checksum.write_text(archive_line, encoding='ascii')
+                self.assertEqual(check_releases('0.5.9', manual=True, root=root).message, '版本相同，安装包待核对')
+                checksum.write_text('b'*64+'  '+name+'\n', encoding='ascii')
+                with self.assertRaisesRegex(ValueError, '与安装包不匹配'):
+                    check_releases('0.5.9', manual=True, root=root)
+
+    def test_manual_check_does_not_report_latest_without_a_verifiable_release(self):
+        tag = 'v0.5.10-linux'
+        row = {'draft': False, 'prerelease': True, 'tag_name': tag, 'html_url': WEB+'tag/'+tag, 'assets': []}
+        for releases, message in (([], '未找到公开的 Linux 发布'), ([row], 'Linux 发布包暂不可验证')):
+            with self.subTest(message=message), patch('linux.update.urlopen', return_value=io.BytesIO(json.dumps(releases).encode())):
+                result = check_releases('0.5.9', manual=True)
+                self.assertIsNone(result.release)
+                self.assertEqual(result.message, message)
+
     def test_package_validation_detects_tampering_and_extra_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = package(Path(tmp)/'package')
@@ -602,6 +649,25 @@ class QtTests(unittest.TestCase):
         self.window.resolve_visual()
         self.window.dirty = True
         self.window.tick()
+
+    def test_manual_update_waits_for_preview_check_and_opens_release_page(self):
+        w = self.window
+        w.updater.manual = True
+        w.updater.results.put(('check', UpdateCheck(message='未找到公开的 Linux 发布'), None))
+        with patch.object(w.updater, 'check') as check:
+            w.poll_updates()
+            check.assert_called_once_with(manual=True)
+        self.assertIsNone(w.notice)
+        release = Release('0.5.9', '流畅度改进', WEB+'tag/v0.5.9-linux', '', 0, '')
+        w.updater.manual = True
+        w.updater.results.put(('manual-check', UpdateCheck(release, '同版本的发布包与本机不同'), None))
+        w.poll_updates()
+        self.assertEqual(w.notice.message, '同版本的发布包与本机不同')
+        self.assertTrue(w.notice.manual_install)
+        with patch.object(w, 'open_url', return_value=True) as open_url:
+            w.update_action('update')
+            open_url.assert_called_once_with(release.url)
+        self.assertIsNone(w.notice.error)
 
     def menu_state(self, choose=''):
         from PySide6.QtCore import QPoint
@@ -827,6 +893,40 @@ class QtTests(unittest.TestCase):
         QTest.mouseRelease(w, Qt.MouseButton.LeftButton, pos=body+QPoint(30, 20))
         self.assertFalse(w.dragging)
         self.assertNotEqual(w.anchor, before)
+
+    def test_drag_translation_reuses_frame_and_restores_input_shape(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        w = self.window
+        w.anchor = self.app.primaryScreen().availableGeometry().center()
+        w.place()
+        start = QPoint(w.anchor)
+        offset = w.renderer.offset
+        body = QPoint(round(410+offset[0]), round(500+offset[1]))
+        cursor = w.mapToGlobal(body)
+        epoch = w.last_poll = w.now
+        with patch('linux.desktop.time.monotonic', return_value=epoch) as clock, \
+             patch.object(w.input_shape, 'apply') as apply_shape:
+            QTest.mousePress(w, Qt.MouseButton.LeftButton, pos=body)
+            QTest.mouseMove(w, w.mapFromGlobal(cursor+QPoint(25, 0)))
+            w.tick()
+            self.assertEqual(w.position[0], 'left')
+            frames = w.frames_rendered
+
+            QTest.mouseMove(w, w.mapFromGlobal(cursor+QPoint(50, 0)))
+            self.assertEqual(w.anchor, start+QPoint(50, 0))
+            self.assertEqual(w.pos(), w.origin())
+            w.tick()
+            self.assertEqual(w.frames_rendered, frames)
+
+            clock.return_value = epoch+.04
+            w.tick()
+            self.assertGreater(w.frames_rendered, frames)
+            apply_shape.assert_not_called()
+            QTest.mouseRelease(w, Qt.MouseButton.LeftButton, pos=w.mapFromGlobal(cursor+QPoint(50, 0)))
+            w.tick()
+            self.assertFalse(w.dragging)
+            apply_shape.assert_called_once()
 
     def test_qt_void_bindings_do_not_consume_none_references(self):
         # Non-immortal CPython singletons require an owned return reference.

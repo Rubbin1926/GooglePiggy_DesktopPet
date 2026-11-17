@@ -7,7 +7,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from linux import VERSION
-from linux.update import MANIFEST, digest, validate_tree
+from linux.update import MANIFEST, MANIFEST_CHECKSUM, digest, validate_tree
 
 
 def main():
@@ -42,8 +42,10 @@ def main():
     with tarfile.open(archive, 'w:gz', dereference=True) as stream:
         for child in sorted(folder.iterdir()):
             stream.add(child, arcname=child.name)
-    (archive.parent/'SHA256SUMS.txt').write_text(digest(archive)+'  '+archive.name+'\n')
-    print(json.dumps({'archive': str(archive), 'files': len(checksums), 'sha256': digest(archive)}))
+    checksum = digest(archive)
+    (archive.parent/'SHA256SUMS.txt').write_text(
+        f'{checksum}  {archive.name}\n{MANIFEST_CHECKSUM}{digest(folder/MANIFEST)}\n', encoding='ascii')
+    print(json.dumps({'archive': str(archive), 'files': len(checksums), 'sha256': checksum}))
 
 
 if __name__ == '__main__':
